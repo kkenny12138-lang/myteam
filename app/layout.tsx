@@ -6,7 +6,7 @@ const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
 const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://myteam-command-center.openai.site'),
+  metadataBase: new URL('https://myteam-command-center.kkenny12138.chatgpt.site'),
   title: 'MyTeam · 智能团队指挥中心',
   description: '把目标交给虚拟团队，由中控大脑拆解并分派给专业顾问。',
   openGraph: {
