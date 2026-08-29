@@ -1,5 +1,5 @@
 # dependencies
-/node_modules
+/node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -10,29 +10,30 @@
 
 # testing
 /coverage
+/.test-db/
 
-# next.js
+# builds and generated files
 /.next/
 /.vinext/
+/dist/
 /out/
+/.wrangler/
+/.vercel
+/outputs/
+/work/
+next-env.d.ts
 
-# misc
+# local environment (keep the documented template)
+.env*
+!.env.example
+
+# local and sensitive files
 .DS_Store
 *.pem
+*.key
 
-# debug
+# debug logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-
-# local environment
-.env*
-
-# deployment and generated files
-.vercel
-next-env.d.ts
-/dist/
-/.wrangler/
-/outputs/
-/work/
