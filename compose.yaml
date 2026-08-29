@@ -1,21 +1,41 @@
 services:
+  db:
+    image: mariadb:11.8
+    container_name: myteam-db
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${DB_NAME:-myteam}
+      MARIADB_USER: ${DB_USER:-myteam}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD must be set}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
   myteam:
     build:
       context: .
     container_name: myteam
     restart: unless-stopped
     environment:
-      # 服务器上 MySQL/MariaDB 的连接信息（在项目目录 .env 文件里配置，compose 会自动读取）
-      # 留空 = 应用使用本地模式（localStorage）；数据库在宿主机时可填 host.docker.internal
-      DB_HOST: ${DB_HOST-}
-      DB_PORT: ${DB_PORT-3306}
-      DB_USER: ${DB_USER-}
+      # 项目自带 MariaDB；连接信息由项目目录 .env 提供，Compose 会自动读取。
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER:-myteam}
       DB_PASSWORD: ${DB_PASSWORD-}
-      DB_NAME: ${DB_NAME-myteam}
+      DB_NAME: ${DB_NAME:-myteam}
       KIMI_API_KEY: ${KIMI_API_KEY-}
       KIMI_MODEL: ${KIMI_MODEL-kimi-k2.6}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY-}
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL-deepseek-v4-flash}
+    depends_on:
+      db:
+        condition: service_healthy
     expose:
       - "3000"
 
@@ -35,5 +55,6 @@ services:
       - caddy_config:/config
 
 volumes:
+  db_data:
   caddy_data:
   caddy_config:
