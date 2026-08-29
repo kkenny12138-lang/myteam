@@ -1,0 +1,8 @@
+xiaowuzhi.online {
+  encode zstd gzip
+  reverse_proxy myteam:3000
+}
+
+www.xiaowuzhi.online {
+  redir https://xiaowuzhi.online{uri} permanent
+}
