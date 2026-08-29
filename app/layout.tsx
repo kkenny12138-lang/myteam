@@ -1,14 +1,18 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
+import './im.css';
 
 const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
 const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://myteam-command-center.kkenny12138.chatgpt.site'),
-  title: 'MyTeam · 智能团队指挥中心',
-  description: '把目标交给虚拟团队，由中控大脑拆解并分派给专业顾问。',
+  metadataBase: new URL('https://xiaowuzhi.online'),
+  title: 'MyTeam · 企业沟通与组织管理',
+  description: '与你的团队即时沟通，管理公司组织架构。',
+  applicationName: 'MyTeam',
+  appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'MyTeam' },
+  icons: { icon: '/favicon.svg', apple: '/og.png' },
   openGraph: {
     title: 'MyTeam · 智能团队指挥中心',
     description: 'CEO 拆解总指令，专业顾问协同执行。',

@@ -1,5 +1,7 @@
 'use client';
 
+export { default } from './im-page';
+
 import { useMemo, useState } from 'react';
 
 const quickCommands = ['分析本季度的增长机会，并给出执行计划', '评估我的投资组合风险，提出调整建议', '为新项目制定预算和里程碑'];
@@ -8,7 +10,8 @@ const team = [
   { name: '巴菲特', role: '财务顾问', initials: 'WB', color: 'from-emerald-400 to-teal-600', note: '价值投资 · 安全边际 · 长期复利' },
 ];
 
-export default function Home() {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function LegacyHome() {
   const [command, setCommand] = useState('');
   const [activeCommand, setActiveCommand] = useState('制定未来 90 天的业务增长计划');
   const [sent, setSent] = useState(false);
