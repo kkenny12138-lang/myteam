@@ -1,0 +1,8 @@
+services:
+  myteam:
+    build:
+      context: .
+    container_name: myteam
+    restart: unless-stopped
+    ports:
+      - "80:3000"
