@@ -1,13 +1,14 @@
 import { ensureSchema, getPool, isDbConfigured } from '@/lib/db';
 
-type OrgNode = { id: string; name: string; description: string; parentId: string | null; department?: string };
+type OrgNode = { id: string; name: string; description: string; parentId: string | null; department?: string; headEmployeeId?: string };
 
 export const DEFAULT_ORG_NODES: OrgNode[] = [
-  { id: 'root', name: '公司总部', parentId: null, description: '统筹公司整体战略与经营目标，负责跨部门协调、资源分配与重大决策的最终拍板。', department: '' },
+  { id: 'root', name: '公司总部', parentId: null, description: '统筹公司整体战略与经营目标，负责跨部门协调、资源分配与重大决策的最终拍板。', department: '公司总部' },
   { id: 'mgmt', name: '管理层', parentId: 'root', department: '管理层', description: '负责公司战略方向制定、关键项目决策与全局资源调度，向下拆解目标并分派给各部门。' },
-  { id: 'product', name: '产品部', parentId: 'root', department: '产品部', description: '负责产品定位、用户体验与品牌表达，把用户需求转化为可落地的产品方案，并对功能做取舍评审。' },
-  { id: 'finance', name: '财务部', parentId: 'root', department: '财务部', description: '负责预算、投资、现金流与风险控制，评估商业模式与长期回报，守住资金安全边界。' },
-  { id: 'strategy', name: '战略部', parentId: 'root', department: '战略部', description: '负责战略推演、决策复盘与风险预判，用多元思维模型识别偏差、预演失败并纠偏。' },
+  { id: 'product', name: '产品部', parentId: 'root', department: '产品部', headEmployeeId: 'jobs', description: '负责产品定位、用户体验与品牌表达，把用户需求转化为可落地的产品方案，并对功能做取舍评审。' },
+  { id: 'finance', name: '财务部', parentId: 'root', department: '财务部', headEmployeeId: 'buffett', description: '负责预算、投资、现金流与风险控制，评估商业模式与长期回报，守住资金安全边界。' },
+  { id: 'strategy', name: '战略部', parentId: 'root', department: '战略部', headEmployeeId: 'munger', description: '负责战略推演、决策复盘与风险预判，用多元思维模型识别偏差、预演失败并纠偏。' },
+  { id: 'hr', name: '人力资源部', parentId: 'root', department: '人力资源部', description: '负责招聘、培训、绩效与员工关系，搭建人才梯队并建设组织文化。' },
 ];
 
 /** GET /api/org-nodes — 返回组织架构节点；无记录时返回默认架构 */
@@ -16,7 +17,7 @@ export async function GET() {
     if (!isDbConfigured()) return Response.json({ orgNodes: null }, { status: 503 });
     await ensureSchema();
     const rows = await getPool().query(
-      'SELECT id, name, description, parent_id, department, sort_order FROM org_nodes ORDER BY sort_order ASC, id ASC'
+      'SELECT id, name, description, parent_id, department, sort_order, head_employee_id FROM org_nodes ORDER BY sort_order ASC, id ASC'
     ) as Array<Record<string, unknown>>;
     if (!rows.length) return Response.json({ orgNodes: DEFAULT_ORG_NODES });
     const nodes: OrgNode[] = rows.map((r) => ({
@@ -25,6 +26,7 @@ export async function GET() {
       description: String(r.description || ''),
       parentId: r.parent_id ? String(r.parent_id) : null,
       department: r.department ? String(r.department) : undefined,
+      headEmployeeId: r.head_employee_id ? String(r.head_employee_id) : undefined,
     }));
     return Response.json({ orgNodes: nodes });
   } catch (error) {
@@ -46,13 +48,13 @@ export async function PUT(request: Request) {
       await connection.beginTransaction();
       await connection.query('DELETE FROM org_nodes');
       if (nodes.length) {
-        const values: Array<[string, string, string, string | null, string | null, number]> = [];
+        const values: Array<[string, string, string, string | null, string | null, number, string | null]> = [];
         nodes.forEach((n, i) => {
           if (!n?.id || !n?.name) return;
-          values.push([n.id, n.name, n.description || '', n.parentId || null, n.department || null, i]);
+          values.push([n.id, n.name, n.description || '', n.parentId || null, n.department || null, i, n.headEmployeeId || null]);
         });
         if (values.length) {
-          await connection.batch('INSERT INTO org_nodes (id, name, description, parent_id, department, sort_order) VALUES (?, ?, ?, ?, ?, ?)', values);
+          await connection.batch('INSERT INTO org_nodes (id, name, description, parent_id, department, sort_order, head_employee_id) VALUES (?, ?, ?, ?, ?, ?, ?)', values);
         }
       }
       await connection.commit();

@@ -1,0 +1,19 @@
+21:08:41 [vite] (rsc) warning: client component dependency is inconsistently optimized. It's recommended to add the dependency to 'optimizeDeps.exclude'.
+  Plugin: rsc:use-client
+  File: D:/Myteam/node_modules/vinext/dist/shims/internal/app-prefetch-fetch-queue.js?v=8a15c4da
+21:18:32 [vite] (rsc) warning: client component dependency is inconsistently optimized. It's recommended to add the dependency to 'optimizeDeps.exclude'.
+  Plugin: rsc:use-client
+  File: D:/Myteam/node_modules/vinext/dist/shims/internal/app-prefetch-fetch-queue.js?v=8a15c4da
+[request req_00bfe9af-d9c3-415c-a528-a525f38a8dfe] unhandled error: RetryableError: Kimi 网络请求失败: fetch failed
+    at generateKimi (D:\Myteam\lib\models\kimi.ts:43:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async generateObject (D:\Myteam\lib\models\gateway.ts:74:20)
+    at async planTask (D:\Myteam\lib\agent\planner.ts:36:32)
+    at async startRun (D:\Myteam\lib\agent\runtime.ts:108:24)
+    at async Object.POST (D:\Myteam\app\api\agent\runs\route.ts:28:21)
+    at async runAppRouteHandler (D:\Myteam\node_modules\vinext\dist\server\app-route-handler-execution.js:49:19)
+    at async executeAppRouteHandler (D:\Myteam\node_modules\vinext\dist\server\app-route-handler-execution.js:63:20)
+    at async runWithPrerenderWorkUnit.route (file:///D:/Myteam/node_modules/vinext/dist/server/app-rsc-handler.js:664:16)
+    at async appRscHandler (file:///D:/Myteam/node_modules/vinext/dist/server/app-rsc-handler.js:678:15) {
+  retryable: true
+}

@@ -1,4 +1,5 @@
 import mariadb from 'mariadb';
+import type { Pool } from 'mariadb';
 
 /**
  * MySQL / MariaDB 连接模块。
@@ -13,14 +14,14 @@ import mariadb from 'mariadb';
 
 export type DbStatus = { configured: boolean; connected: boolean };
 
-let pool: mariadb.Pool | null = null;
+let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
 
 export function isDbConfigured(): boolean {
   return Boolean(process.env.DB_HOST && process.env.DB_USER && process.env.DB_NAME);
 }
 
-export function getPool(): mariadb.Pool {
+export function getPool(): Pool {
   if (!isDbConfigured()) {
     throw new Error('数据库未配置：缺少 DB_HOST / DB_USER / DB_NAME 环境变量');
   }
@@ -113,6 +114,113 @@ const SCHEMA_STATEMENTS = [
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_group_messages (group_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  // ---- Agent 平台（docs/AGENT_PLATFORM_TECHNICAL_DESIGN.md §4.2）----
+  `CREATE TABLE IF NOT EXISTS agents (
+  id VARCHAR(64) PRIMARY KEY,
+  agent_type ENUM('company','employee') NOT NULL,
+  employee_id VARCHAR(50) NULL,
+  name VARCHAR(100) NOT NULL,
+  system_instructions MEDIUMTEXT NOT NULL,
+  model_provider VARCHAR(30) NOT NULL DEFAULT 'deepseek',
+  model_name VARCHAR(100) NOT NULL,
+  config_json JSON NULL,
+  status ENUM('draft','active','disabled') NOT NULL DEFAULT 'draft',
+  version INT NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_agent_employee (employee_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS skills (
+  id VARCHAR(64) PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  summary VARCHAR(500) NOT NULL DEFAULT '',
+  instructions LONGTEXT NOT NULL,
+  input_schema JSON NULL,
+  output_schema JSON NULL,
+  examples_json JSON NULL,
+  status ENUM('draft','published','disabled') NOT NULL DEFAULT 'draft',
+  version INT NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS agent_skills (
+  agent_id VARCHAR(64) NOT NULL,
+  skill_id VARCHAR(64) NOT NULL,
+  priority INT NOT NULL DEFAULT 100,
+  custom_instructions MEDIUMTEXT NULL,
+  enabled TINYINT(1) NOT NULL DEFAULT 1,
+  PRIMARY KEY (agent_id, skill_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS agent_runs (
+  id VARCHAR(64) PRIMARY KEY,
+  parent_run_id VARCHAR(64) NULL,
+  root_run_id VARCHAR(64) NOT NULL,
+  conversation_id VARCHAR(64) NOT NULL,
+  agent_id VARCHAR(64) NOT NULL,
+  skill_id VARCHAR(64) NULL,
+  status ENUM('queued','planning','running','waiting','succeeded','failed','cancelled') NOT NULL,
+  input_text MEDIUMTEXT NOT NULL,
+  output_text MEDIUMTEXT NULL,
+  error_text MEDIUMTEXT NULL,
+  model_name VARCHAR(100) NULL,
+  prompt_tokens INT NOT NULL DEFAULT 0,
+  completion_tokens INT NOT NULL DEFAULT 0,
+  latency_ms INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  finished_at TIMESTAMP NULL,
+  INDEX idx_runs_root (root_run_id, created_at),
+  INDEX idx_runs_conversation (conversation_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS agent_run_events (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  run_id VARCHAR(64) NOT NULL,
+  event_type VARCHAR(50) NOT NULL,
+  payload_json JSON NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_run_events (run_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  // ---- Phase 3：工具 / 记忆 / 产物 ----
+  `CREATE TABLE IF NOT EXISTS tools (
+  id VARCHAR(64) PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  description MEDIUMTEXT NOT NULL,
+  input_schema JSON NULL,
+  permission ENUM('read','write') NOT NULL DEFAULT 'read',
+  status ENUM('active','disabled') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS agent_tools (
+  agent_id VARCHAR(64) NOT NULL,
+  tool_id VARCHAR(64) NOT NULL,
+  enabled TINYINT(1) NOT NULL DEFAULT 1,
+  PRIMARY KEY (agent_id, tool_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS memories (
+  id VARCHAR(64) PRIMARY KEY,
+  agent_id VARCHAR(64) NOT NULL,
+  kind ENUM('long_term','preference','task_context','summary') NOT NULL DEFAULT 'long_term',
+  content MEDIUMTEXT NOT NULL,
+  metadata_json JSON NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_memories_agent (agent_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS artifacts (
+  id VARCHAR(64) PRIMARY KEY,
+  run_id VARCHAR(64) NOT NULL,
+  name VARCHAR(150) NOT NULL,
+  mime_type VARCHAR(60) NOT NULL DEFAULT 'text/markdown',
+  content LONGTEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_artifacts_run (run_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  // ---- 迁移记录表（幂等迁移，文档 §4.3）----
+  `CREATE TABLE IF NOT EXISTS schema_migrations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(150) NOT NULL UNIQUE,
+  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 ];
 
 /** 幂等地创建/补齐数据表，每个进程只执行一次。 */
@@ -138,6 +246,7 @@ export function ensureSchema(): Promise<void> {
         await ensureColumn('employee_profiles', 'keywords', 'MEDIUMTEXT');
         await ensureColumn('employee_profiles', 'not_good_at', 'MEDIUMTEXT');
         await ensureColumn('employee_profiles', 'career', 'MEDIUMTEXT');
+        await ensureColumn('org_nodes', 'head_employee_id', 'VARCHAR(50) DEFAULT NULL');
       } finally {
         connection.release();
       }
