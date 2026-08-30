@@ -34,6 +34,9 @@ export function getPool(): mariadb.Pool {
       connectionLimit: 10,
       connectTimeout: 5000,
       charset: 'utf8mb4',
+      // Required for MySQL 8's default caching_sha2_password authentication
+      // when the database is reached over the private Docker network.
+      allowPublicKeyRetrieval: true,
     });
   }
   return pool;
