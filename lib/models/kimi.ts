@@ -89,3 +89,62 @@ export async function generateKimi(params: GenerateParamsLike): Promise<Generate
   };
   return { text, usage, modelName: params.model };
 }
+
+const FILES_ENDPOINT = 'https://api.moonshot.cn/v1/files';
+
+function sleepKimi(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 用 Kimi Files API 抽取文档文本（purpose=file-extract）。
+ * 支持 pdf / doc / docx / xls / xlsx / ppt / pptx / txt / csv / md 等文本类格式。
+ * 失败（无 key / 网络错误 / 不支持 / 并发限流）时返回 null，由调用方回退到本地解析。
+ */
+export async function extractKimiFile(
+  bytes: Uint8Array,
+  filename: string,
+  mimeType: string
+): Promise<string | null> {
+  const apiKey = process.env.KIMI_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const form = new FormData();
+    form.append('purpose', 'file-extract');
+    form.append('file', new File([bytes as BlobPart], filename || 'attachment', { type: mimeType || 'application/octet-stream' }));
+    const upload = await fetch(FILES_ENDPOINT, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+    if (!upload.ok) return null;
+    const fileObj = (await upload.json().catch(() => null)) as { id?: string } | null;
+    const fileId = fileObj?.id;
+    if (!fileId) return null;
+    // 拉取抽取内容（file-extract 通常即时就绪；未就绪则短暂重试）
+    let raw = '';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const content = await fetch(`${FILES_ENDPOINT}/${fileId}/content`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (content.ok) {
+        raw = await content.text();
+        if (raw.trim()) break;
+      }
+      await sleepKimi(600 * (attempt + 1));
+    }
+    if (!raw.trim()) return null;
+    // 响应可能是 JSON（{ "content": "..." }）或纯文本
+    try {
+      const parsed = JSON.parse(raw) as { content?: unknown };
+      if (typeof parsed.content === 'string' && parsed.content.trim()) {
+        return parsed.content.trim();
+      }
+    } catch {
+      /* 非 JSON，按纯文本返回 */
+    }
+    return raw.trim();
+  } catch {
+    return null;
+  }
+}

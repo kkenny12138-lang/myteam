@@ -112,6 +112,19 @@ export async function deleteAttachment(id: string): Promise<boolean> {
   return (result as { affectedRows?: number }).affectedRows ? true : false;
 }
 
+/** 回写抽取结果（例如 Kimi Files API 抽取成功后的缓存） */
+export async function updateExtractedText(
+  id: string,
+  extractedText: string,
+  meta: Record<string, unknown>
+): Promise<void> {
+  await ensureSchema();
+  await getPool().query(
+    'UPDATE attachments SET extracted_text = ?, extraction_meta = ?, status = ? WHERE id = ?',
+    [extractedText, JSON.stringify(meta), 'ready', id]
+  );
+}
+
 export async function linkMessageAttachment(
   messageType: 'single' | 'group',
   messageId: string,

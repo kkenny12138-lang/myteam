@@ -12,8 +12,9 @@ import { buildSystemPrompt } from '@/lib/agent/prompt-builder';
 import { getAgentByEmployeeId } from '@/lib/repositories/agents';
 import { listAgentSkills } from '@/lib/repositories/skills';
 import { listMemories } from '@/lib/repositories/memories';
-import { getAttachmentBytes, getAttachments } from '@/lib/repositories/attachments';
+import { getAttachmentBytes, getAttachments, updateExtractedText } from '@/lib/repositories/attachments';
 import { defaultModel, generate, modelCapabilities } from '@/lib/models/gateway';
+import { extractKimiFile } from '@/lib/models/kimi';
 import { ensureSchema, getPool, isDbConfigured } from '@/lib/db';
 import type { AttachmentRecord, ChatMessage, MessageContentPart, ModelProvider } from '@/lib/agent/types';
 
@@ -139,7 +140,7 @@ export async function POST(request: Request) {
 
     const mode: AnswerMode = body.mode === 'deep' ? 'deep' : 'fast';
     // 全局领先：模型名一律按用户所选供应商解析，忽略 Agent 自身的 modelProvider/modelName。
-    const messages = await buildMessagesWithAttachments(history, attachments, caps);
+    const messages = await buildMessagesWithAttachments(history, attachments, caps, provider);
     const result = await generate({
       provider,
       model: modelName,
@@ -180,7 +181,8 @@ async function loadAndValidateAttachments(
 async function buildMessagesWithAttachments(
   history: ChatMessage[],
   attachments: AttachmentRecord[],
-  caps: ReturnType<typeof modelCapabilities>
+  caps: ReturnType<typeof modelCapabilities>,
+  provider: ModelProvider
 ): Promise<ChatMessage[]> {
   if (!attachments.length) return history;
   let lastUserIdx = -1;
@@ -206,7 +208,22 @@ async function buildMessagesWithAttachments(
         parts.push({ type: 'text', text: `[用户上传了图片「${att.originalName}」]` });
       }
     } else {
-      const text = (att.extractedText || '').trim();
+      let text = (att.extractedText || '').trim();
+      // 本地未抽取到文本时，Kimi 走官方 Files API（file-extract）补抽取
+      if (!text && provider === 'kimi') {
+        const file = await getAttachmentBytes(att.id);
+        if (file) {
+          const extracted = await extractKimiFile(file.bytes, att.originalName, att.mimeType);
+          if (extracted) {
+            text = extracted;
+            try {
+              await updateExtractedText(att.id, extracted.slice(0, 60000), { parseable: true, kind: att.category, source: 'kimi-files' });
+            } catch {
+              // 回写失败不影响本次分析
+            }
+          }
+        }
+      }
       if (text) {
         parts.push({ type: 'text', text: `【附件：${att.originalName}】\n${text.slice(0, 6000)}` });
       } else {
