@@ -9,6 +9,7 @@ export const DEFAULT_ORG_NODES: OrgNode[] = [
   { id: 'finance', name: '财务部', parentId: 'root', department: '财务部', headEmployeeId: 'buffett', description: '负责预算、投资、现金流与风险控制，评估商业模式与长期回报，守住资金安全边界。' },
   { id: 'strategy', name: '战略部', parentId: 'root', department: '战略部', headEmployeeId: 'munger', description: '负责战略推演、决策复盘与风险预判，用多元思维模型识别偏差、预演失败并纠偏。' },
   { id: 'hr', name: '人力资源部', parentId: 'root', department: '人力资源部', description: '负责招聘、培训、绩效与员工关系，搭建人才梯队并建设组织文化。' },
+  { id: 'recruiting', name: '招聘部', parentId: 'hr', department: '招聘部', description: '负责人才需求分析、候选人搜寻、面试评估与录用跟进，为各部门持续补充合适人才。' },
 ];
 
 /** GET /api/org-nodes — 返回组织架构节点；无记录时返回默认架构 */

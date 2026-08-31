@@ -58,3 +58,43 @@ export async function PUT(request: Request) {
     return Response.json({ error: error instanceof Error ? error.message : '保存失败' }, { status: 500 });
   }
 }
+
+/** POST /api/employees — 新增一名员工。 */
+export async function POST(request: Request) {
+  try {
+    const body = await request.json() as { employee?: Employee };
+    const employee = body.employee;
+    if (!employee?.id?.trim() || !employee.name?.trim() || !employee.department?.trim()) {
+      return Response.json({ error: '员工姓名和所属部门不能为空' }, { status: 400 });
+    }
+    if (!isDbConfigured()) return Response.json({ error: '数据库未配置' }, { status: 503 });
+    await ensureSchema();
+    const duplicate = await getPool().query('SELECT id FROM employees WHERE id = ? OR name = ? LIMIT 1', [employee.id, employee.name.trim()]) as Array<Record<string, unknown>>;
+    if (duplicate.length) return Response.json({ error: '员工已存在' }, { status: 409 });
+    await getPool().query(
+      `INSERT INTO employees (id, name, role, department, initials, color, online, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM (SELECT sort_order FROM employees) AS employee_order))`,
+      [employee.id.trim(), employee.name.trim(), employee.role?.trim() || '招聘专员', employee.department.trim(), employee.initials?.trim() || employee.name.trim().slice(0, 2), employee.color || '#3478f6', employee.online ? 1 : 0]
+    );
+    return Response.json({ employee }, { status: 201 });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : '新增员工失败' }, { status: 500 });
+  }
+}
+
+/** PATCH /api/employees — 调整员工所属部门。 */
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json() as { employeeId?: string; department?: string };
+    const employeeId = body.employeeId?.trim() || '';
+    const department = body.department?.trim() || '';
+    if (!employeeId || !department) return Response.json({ error: '员工和部门不能为空' }, { status: 400 });
+    if (!isDbConfigured()) return Response.json({ error: '数据库未配置' }, { status: 503 });
+    await ensureSchema();
+    const result = await getPool().query('UPDATE employees SET department = ? WHERE id = ?', [department, employeeId]);
+    if (!result.affectedRows) return Response.json({ error: '员工不存在' }, { status: 404 });
+    return Response.json({ ok: true });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : '调整部门失败' }, { status: 500 });
+  }
+}

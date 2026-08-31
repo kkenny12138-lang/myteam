@@ -42,6 +42,8 @@ const DEFAULT_DECISION_LINE: DecisionLine = { dispatcherId: 'elon', nodes: [{ em
 function getEmployeeProfile(employee: Employee, profiles: Record<string, EmployeeProfile>): EmployeeProfile { return profiles[employee.id] || employeeProfiles[employee.id] || { summary: `围绕${employee.role}职责提供专业、具体且可执行的工作建议。`, traits: ['专业可靠', '结果导向', '主动协作'], expertise: `${employee.department} · ${employee.role}`, strengths: ['熟悉本岗位的专业工作', '能够围绕目标提供可执行建议', '沟通清晰并主动配合团队'], weaknesses: ['对跨部门信息的掌握依赖你提供的上下文', '遇到信息不足时需要进一步确认', '重要结论仍需要结合真实业务数据验证'], bestFor: [`处理${employee.role}相关任务`, `${employee.department}的方案分析与执行建议`, '日常工作讨论和方案初稿'], skills: [] }; }
 
 async function pushEmployees(list: Employee[]) { try { await fetch('/api/employees', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ employees: list }) }); } catch {} }
+async function createEmployee(employee: Employee) { const response = await fetch('/api/employees', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ employee }) }); const data = await response.json().catch(() => ({})) as { error?: string }; if (!response.ok) throw new Error(data.error || '新增成员失败'); }
+async function moveEmployee(employeeId: string, department: string) { const response = await fetch('/api/employees', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ employeeId, department }) }); const data = await response.json().catch(() => ({})) as { error?: string }; if (!response.ok) throw new Error(data.error || '调整部门失败'); }
 async function pushMessages(map: MessageMap) { try { await fetch('/api/messages', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: map }) }); } catch {} }
 async function pushProfiles(profiles: Record<string, EmployeeProfile>) { try { await fetch('/api/profiles', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profiles }) }); } catch {} }
 async function pushProfile(employeeId: string, profile: EmployeeProfile) {
@@ -82,6 +84,7 @@ const DEFAULT_ORG_NODES: OrgNode[] = [
   { id: 'finance', name: '财务部', parentId: 'root', department: '财务部', headEmployeeId: 'buffett', description: '负责预算、投资、现金流与风险控制，评估商业模式与长期回报，守住资金安全边界。' },
   { id: 'strategy', name: '战略部', parentId: 'root', department: '战略部', headEmployeeId: 'munger', description: '负责战略推演、决策复盘与风险预判，用多元思维模型识别偏差、预演失败并纠偏。' },
   { id: 'hr', name: '人力资源部', parentId: 'root', department: '人力资源部', description: '负责招聘、培训、绩效与员工关系，搭建人才梯队并建设组织文化。' },
+  { id: 'recruiting', name: '招聘部', parentId: 'hr', department: '招聘部', description: '负责人才需求分析、候选人搜寻、面试评估与录用跟进，为各部门持续补充合适人才。' },
 ];
 
 export default function IMPage() {
@@ -343,11 +346,35 @@ function OrgDirectory({ employees, profiles, orgNodes, decisionDispatcher, emplo
 }
 
 function OrgNodeDetail({ node, members, onSelectMember, onOpenChat }: { node: OrgNode; members: Employee[]; onSelectMember: (id: string) => void; onOpenChat: (id: string) => void; }) {
+  const [showAddMember, setShowAddMember] = useState(false);
   return <div className="org-node-detail">
     <header className="org-detail-header"><div className="org-detail-icon">▤</div><div><span className="eyebrow">ORG NODE</span><h2>{node.name}</h2><p>{members.length} 位成员</p></div></header>
     <section className="org-block"><h3>架构职责</h3><p className="org-node-desc">{node.description || '暂无职责说明'}</p></section>
-    <section className="org-block"><h3>架构成员</h3><div className="org-member-list">{members.map((m) => <div className="org-member-item" key={m.id}><button className="org-member-main" onClick={() => onSelectMember(m.id)}><Avatar employee={m} compact /><div><strong>{m.name}</strong>{node.headEmployeeId === m.id ? <span className="member-head-tag">负责人</span> : null}<span>{m.role}</span></div></button><button className="org-go-chat" onClick={() => onOpenChat(m.id)}>去对话 →</button></div>)}{!members.length && <p className="org-empty">该节点暂无成员</p>}</div></section>
+    <section className="org-block"><div className="org-block-title"><h3>架构成员</h3>{node.department && <button className="org-add-member" onClick={() => setShowAddMember(true)}>＋ 添加成员</button>}</div><div className="org-member-list">{members.map((m) => <div className="org-member-item" key={m.id}><button className="org-member-main" onClick={() => onSelectMember(m.id)}><Avatar employee={m} compact /><div><strong>{m.name}</strong>{node.headEmployeeId === m.id ? <span className="member-head-tag">负责人</span> : null}<span>{m.role}</span></div></button><button className="org-go-chat" onClick={() => onOpenChat(m.id)}>去对话 →</button></div>)}{!members.length && <p className="org-empty">该节点暂无成员，点击右上角添加。</p>}</div></section>
+    {showAddMember && node.department && <DepartmentMemberModal node={node} currentMemberIds={members.map((m) => m.id)} onClose={() => setShowAddMember(false)} />}
   </div>;
+}
+
+function DepartmentMemberModal({ node, currentMemberIds, onClose }: { node: OrgNode; currentMemberIds: string[]; onClose: () => void }) {
+  const [mode, setMode] = useState<'existing' | 'new'>('new');
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [name, setName] = useState('');
+  const [role, setRole] = useState(node.id === 'recruiting' ? '招聘专员' : '部门成员');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => { const load = async () => { try { const response = await fetch('/api/employees'); const data = await response.json() as { employees?: Employee[] }; setEmployees(data.employees || []); } catch { setError('成员列表加载失败'); } }; void load(); }, []);
+  const candidates = employees.filter((employee) => !currentMemberIds.includes(employee.id));
+  const finish = () => { onClose(); window.location.reload(); };
+  const addExisting = async (employeeId: string) => { setSaving(true); setError(''); try { await moveEmployee(employeeId, node.department || node.name); finish(); } catch (e) { setError(e instanceof Error ? e.message : '添加失败'); setSaving(false); } };
+  const addNew = async () => {
+    const cleanName = name.trim(); if (!cleanName) return;
+    setSaving(true); setError('');
+    const id = `employee_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    const colors = ['#3478f6', '#20b486', '#8b7cf6', '#ff7a45', '#d65db1'];
+    const employee: Employee = { id, name: cleanName, role: role.trim() || '部门成员', department: node.department || node.name, initials: cleanName.slice(0, 2), color: colors[employees.length % colors.length], online: true };
+    try { await createEmployee(employee); finish(); } catch (e) { setError(e instanceof Error ? e.message : '新增失败'); setSaving(false); }
+  };
+  return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) onClose(); }}><section className="department-member-modal"><header><div><span className="eyebrow">ADD MEMBER</span><h2>添加到{node.name}</h2><p>新建成员，或将现有成员调整到该部门</p></div><button onClick={onClose} disabled={saving}>×</button></header><div className="member-mode-tabs"><button className={mode === 'new' ? 'active' : ''} onClick={() => setMode('new')}>新建成员</button><button className={mode === 'existing' ? 'active' : ''} onClick={() => setMode('existing')}>选择现有成员</button></div>{mode === 'new' ? <div className="member-create-form"><label>姓名<input value={name} onChange={(e) => setName(e.target.value)} placeholder="请输入成员姓名" autoFocus /></label><label>职位<input value={role} onChange={(e) => setRole(e.target.value)} placeholder="如：招聘专员" /></label><button className="primary-action" disabled={!name.trim() || saving} onClick={() => void addNew()}>{saving ? '添加中…' : '确认添加'}</button></div> : <div className="department-candidates">{candidates.length ? candidates.map((employee) => <button key={employee.id} disabled={saving} onClick={() => void addExisting(employee.id)}><Avatar employee={employee} compact /><span><strong>{employee.name}</strong><small>{employee.role} · 当前在{employee.department}</small></span><b>加入</b></button>) : <p className="org-empty">暂无可添加的现有成员</p>}</div>}{error && <p className="member-add-error">{error}</p>}</section></div>;
 }
 
 function EmployeeDetailCard({ employee, profile, employeeModels, chatModel, onSetEmployeeModel, onSaveProfile, onOpenChat }: { employee: Employee; profile: EmployeeProfile; employeeModels: Record<string, ChatModel>; chatModel: ChatModel; onSetEmployeeModel: (employeeId: string, model: ChatModel | null) => void; onSaveProfile: (employeeId: string, profile: EmployeeProfile) => Promise<void>; onOpenChat: (id: string) => void; }) {
