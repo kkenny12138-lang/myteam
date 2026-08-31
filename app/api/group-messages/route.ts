@@ -1,9 +1,22 @@
 import { ensureSchema, getPool, isDbConfigured } from '@/lib/db';
+import { clearMessageAttachments, linkMessageAttachment, listAttachmentsForMessages } from '@/lib/repositories/attachments';
+import type { AttachmentRecord, AttachmentRef } from '@/lib/agent/types';
 
-type GroupMessage = { id: string; sender: 'me' | 'employee'; senderName: string; text: string; time: string; tokens?: number };
+type GroupMessage = { id: string; sender: 'me' | 'employee'; senderName: string; text: string; time: string; tokens?: number; attachments?: AttachmentRef[] };
 type GroupMessageMap = Record<string, GroupMessage[]>;
 
-/** GET /api/group-messages — 返回全部群消息（按群 id 分组） */
+function toRef(a: AttachmentRecord): AttachmentRef {
+  return {
+    id: a.id,
+    originalName: a.originalName,
+    mimeType: a.mimeType,
+    sizeBytes: a.sizeBytes,
+    category: a.category,
+    status: a.status,
+  };
+}
+
+/** GET /api/group-messages — 返回全部群消息（按群 id 分组，含附件） */
 export async function GET() {
   try {
     if (!isDbConfigured()) return Response.json({ groupMessages: null }, { status: 503 });
@@ -12,16 +25,27 @@ export async function GET() {
       'SELECT id, group_id, sender, sender_name, text, time, tokens FROM group_messages ORDER BY group_id ASC, created_at ASC, id ASC'
     ) as Array<Record<string, unknown>>;
     const groupMessages: GroupMessageMap = {};
+    const ids: string[] = [];
     for (const r of rows) {
       const groupId = String(r.group_id);
+      const id = String(r.id);
+      ids.push(id);
       (groupMessages[groupId] ||= []).push({
-        id: String(r.id),
+        id,
         sender: r.sender === 'me' ? 'me' : 'employee',
         senderName: String(r.sender_name || ''),
         text: String(r.text || ''),
         time: String(r.time || ''),
         tokens: r.tokens ? Number(r.tokens) : undefined,
+        attachments: [],
       });
+    }
+    const attMap = await listAttachmentsForMessages('group', ids);
+    for (const list of Object.values(groupMessages)) {
+      for (const m of list) {
+        const atts = attMap[m.id];
+        if (atts?.length) m.attachments = atts.map(toRef);
+      }
     }
     return Response.json({ groupMessages });
   } catch (error) {
@@ -40,6 +64,7 @@ export async function PUT(request: Request) {
     await ensureSchema();
     const connection = await pool.getConnection();
     const values: Array<[string, string, string, string, string, string, number]> = [];
+    const relations: Array<[string, string, number]> = [];
     try {
       await connection.beginTransaction();
       await connection.query('DELETE FROM group_messages');
@@ -47,6 +72,9 @@ export async function PUT(request: Request) {
         for (const m of list) {
           if (!m?.id) continue;
           values.push([m.id, groupId, m.sender === 'me' ? 'me' : 'employee', m.senderName || '', m.text || '', m.time || '', m.tokens || 0]);
+          for (const att of m.attachments || []) {
+            if (att?.id) relations.push([m.id, att.id, 0]);
+          }
         }
       }
       if (values.length) {
@@ -58,6 +86,14 @@ export async function PUT(request: Request) {
       throw err;
     } finally {
       connection.release();
+    }
+    try {
+      await clearMessageAttachments('group');
+      for (const [messageId, attachmentId, sortOrder] of relations) {
+        await linkMessageAttachment('group', messageId, attachmentId, sortOrder);
+      }
+    } catch {
+      // 关联写入失败不阻断消息保存
     }
     return Response.json({ ok: true, count: values.length });
   } catch (error) {

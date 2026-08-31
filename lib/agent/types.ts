@@ -21,10 +21,56 @@ export type ChatRole = 'system' | 'user' | 'assistant';
 /** 模型提供商 */
 export type ModelProvider = 'kimi' | 'deepseek';
 
+/** 附件状态 */
+export type AttachmentStatus =
+  | 'uploading'
+  | 'processing'
+  | 'ready'
+  | 'failed'
+  | 'deleted';
+
+/** 附件类别 */
+export type AttachmentCategory = 'image' | 'document' | 'spreadsheet' | 'text';
+
+/** 附件归属：单聊或群聊 */
+export type AttachmentOwnerType = 'single' | 'group';
+
+/** 附件记录（对应 attachments 表，不含文件二进制） */
+export interface AttachmentRecord {
+  id: string;
+  ownerType: AttachmentOwnerType;
+  ownerId: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  category: AttachmentCategory;
+  status: AttachmentStatus;
+  extractedText?: string | null;
+  extractionMeta?: Record<string, unknown> | null;
+  errorMessage?: string | null;
+  createdAt?: string;
+}
+
+/** 前端展示用附件元数据（随消息一起下发） */
+export interface AttachmentRef {
+  id: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  category: AttachmentCategory;
+  status: AttachmentStatus;
+}
+
+/** 消息内容块（多模态） */
+export type MessageContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; attachmentId: string; mimeType: string; url: string }
+  | { type: 'document'; attachmentId: string; name: string; text: string };
+
 /** 单个模型消息（与供应商无关的规范格式） */
 export interface ChatMessage {
   role: ChatRole;
-  content: string;
+  content: string | MessageContentPart[];
 }
 
 /** Agent 记录（对应 agents 表） */

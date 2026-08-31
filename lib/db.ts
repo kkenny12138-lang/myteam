@@ -114,6 +114,34 @@ const SCHEMA_STATEMENTS = [
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_group_messages (group_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  // ---- 对话附件（docs/MULTIMODAL_ATTACHMENT_DEVELOPMENT_PLAN.md §5）----
+  `CREATE TABLE IF NOT EXISTS attachments (
+  id VARCHAR(64) PRIMARY KEY,
+  owner_type VARCHAR(20) NOT NULL,
+  owner_id VARCHAR(64) NOT NULL,
+  original_name VARCHAR(255) NOT NULL,
+  mime_type VARCHAR(100) NOT NULL,
+  size_bytes BIGINT NOT NULL,
+  category VARCHAR(30) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'uploading',
+  data LONGBLOB NULL,
+  extracted_text LONGTEXT NULL,
+  extraction_meta JSON NULL,
+  error_message TEXT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_attachment_owner (owner_type, owner_id),
+  INDEX idx_attachment_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS message_attachments (
+  message_type VARCHAR(20) NOT NULL,
+  message_id VARCHAR(64) NOT NULL,
+  attachment_id VARCHAR(64) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (message_type, message_id, attachment_id),
+  INDEX idx_ma_attachment (attachment_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   // ---- Agent 平台（docs/AGENT_PLATFORM_TECHNICAL_DESIGN.md §4.2）----
   `CREATE TABLE IF NOT EXISTS agents (
   id VARCHAR(64) PRIMARY KEY,

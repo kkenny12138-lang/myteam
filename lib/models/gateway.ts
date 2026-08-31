@@ -44,6 +44,29 @@ export function defaultModel(provider: ModelProvider): string {
   return process.env[provider === 'deepseek' ? 'DEEPSEEK_MODEL' : 'KIMI_MODEL'] || PROVIDER_MODEL_DEFAULT[provider];
 }
 
+/** 模型能力配置（docs/MULTIMODAL_ATTACHMENT_DEVELOPMENT_PLAN.md §8） */
+export interface ModelCapabilities {
+  imageInput: boolean;
+  nativeDocumentInput: boolean;
+  maxImages: number;
+  maxFileBytes: number;
+}
+
+/**
+ * 读取所选模型的视觉能力。保守默认：未知模型一律不支持图片输入。
+ * 可用环境变量显式开启：DEEPSEEK_IMAGE_INPUT / KIMI_IMAGE_INPUT = true|1
+ */
+export function modelCapabilities(provider: ModelProvider, _model: string): ModelCapabilities {
+  const envImage = provider === 'deepseek' ? process.env.DEEPSEEK_IMAGE_INPUT : process.env.KIMI_IMAGE_INPUT;
+  const imageInput = /^(1|true|yes)$/i.test(envImage || '');
+  return {
+    imageInput,
+    nativeDocumentInput: false,
+    maxImages: 4,
+    maxFileBytes: Number(process.env.ATTACHMENT_MAX_FILE_MB || 20) * 1024 * 1024,
+  };
+}
+
 /** 统一调用：普通文本生成 */
 export async function generate(params: GenerateParams, options?: ModelRequestOptions): Promise<GenerateResult> {
   const opts = { ...params, ...options };

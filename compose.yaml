@@ -34,8 +34,12 @@ services:
       DB_NAME: ${DB_NAME:-myteam}
       KIMI_API_KEY: ${KIMI_API_KEY-}
       KIMI_MODEL: ${KIMI_MODEL-kimi-k2.6}
+      KIMI_IMAGE_INPUT: ${KIMI_IMAGE_INPUT-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY-}
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL-deepseek-v4-flash}
+      DEEPSEEK_IMAGE_INPUT: ${DEEPSEEK_IMAGE_INPUT-}
+      ATTACHMENT_MAX_FILE_MB: ${ATTACHMENT_MAX_FILE_MB-20}
+      ATTACHMENT_MAX_COUNT: ${ATTACHMENT_MAX_COUNT-5}
     depends_on:
       db:
         condition: service_healthy

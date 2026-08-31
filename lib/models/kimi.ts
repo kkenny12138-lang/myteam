@@ -2,19 +2,31 @@
  * Kimi（月之暗面 Moonshot）模型 Adapter。
  * 只允许在这里出现 Kimi 专有字段（endpoint / thinking 等）。
  */
-import type { GenerateResult, Usage } from '@/lib/agent/types';
+import type { GenerateResult, MessageContentPart, Usage } from '@/lib/agent/types';
 import { FatalError, RetryableError } from '@/lib/models/gateway';
 
 const ENDPOINT = 'https://api.moonshot.cn/v1/chat/completions';
 
+type ProviderMessage = { role: 'system' | 'user' | 'assistant'; content: string | MessageContentPart[] };
+
 interface GenerateParamsLike {
   model: string;
   system: string;
-  messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
+  messages: ProviderMessage[];
   temperature?: number;
   maxTokens?: number;
   json?: boolean;
   signal?: AbortSignal;
+}
+
+/** 把统一内容块转成 Kimi 的 OpenAI 兼容格式（图片 → image_url，文档 → 文本） */
+function toProviderContent(content: string | MessageContentPart[]) {
+  if (typeof content === 'string') return content;
+  return content.map((part) => {
+    if (part.type === 'text') return { type: 'text', text: part.text };
+    if (part.type === 'image') return { type: 'image_url', image_url: { url: part.url } };
+    return { type: 'text', text: `【附件：${part.name}】\n${part.text}` };
+  });
 }
 
 export async function generateKimi(params: GenerateParamsLike): Promise<GenerateResult> {
@@ -24,7 +36,7 @@ export async function generateKimi(params: GenerateParamsLike): Promise<Generate
   const isReasoningModel = /^kimi-k2/i.test(params.model);
   const body: Record<string, unknown> = {
     model: params.model,
-    messages: [{ role: 'system', content: params.system }, ...params.messages],
+    messages: [{ role: 'system', content: params.system }, ...params.messages.map((m) => ({ role: m.role, content: toProviderContent(m.content) }))],
     stream: false,
     temperature: isReasoningModel ? 1 : (params.temperature ?? 0.6),
     max_tokens: params.maxTokens ?? 4000,
