@@ -53,12 +53,21 @@ export interface ModelCapabilities {
 }
 
 /**
- * 读取所选模型的视觉能力。保守默认：未知模型一律不支持图片输入。
- * 可用环境变量显式开启：DEEPSEEK_IMAGE_INPUT / KIMI_IMAGE_INPUT = true|1
+ * 读取所选模型的视觉能力（docs/MULTIMODAL_ATTACHMENT_DEVELOPMENT_PLAN.md §8）。
+ * - Kimi：k3 / k2.7-code / k2.6 / latest / vision 系列原生支持图片（与视频）输入。
+ * - DeepSeek：官方 API（deepseek-chat / deepseek-reasoner）仅文本，不支持图片输入。
+ * 环境变量 DEEPSEEK_IMAGE_INPUT / KIMI_IMAGE_INPUT 可强制覆盖（true=开启，false=关闭）。
  */
-export function modelCapabilities(provider: ModelProvider, _model: string): ModelCapabilities {
+export function modelCapabilities(provider: ModelProvider, model: string): ModelCapabilities {
   const envImage = provider === 'deepseek' ? process.env.DEEPSEEK_IMAGE_INPUT : process.env.KIMI_IMAGE_INPUT;
-  const imageInput = /^(1|true|yes)$/i.test(envImage || '');
+  let imageInput: boolean;
+  if (envImage) {
+    imageInput = /^(1|true|yes)$/i.test(envImage);
+  } else if (provider === 'kimi') {
+    imageInput = /kimi-k3|kimi-k2\.7|kimi-k2\.6|kimi-latest|vision/i.test(model);
+  } else {
+    imageInput = false;
+  }
   return {
     imageInput,
     nativeDocumentInput: false,
