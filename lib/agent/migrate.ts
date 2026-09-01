@@ -11,6 +11,7 @@
 import { ensureSchema, getPool, isDbConfigured } from '@/lib/db';
 import type { PoolConnection } from 'mariadb';
 import { newSkillId } from '@/lib/agent/validators';
+import { buildEmployeeAgent } from '@/lib/agent/employee-agent';
 
 const MIGRATION_NAME = 'agent_bootstrap_v1';
 
@@ -51,9 +52,9 @@ export async function migrateToAgentPlatform(): Promise<MigrateResult> {
 
   const connection = await getPool().getConnection();
   try {
-    // 幂等：已执行过则跳过
+    // 旧 Skill 迁移只执行一次；员工 Agent 的补建每次都执行，确保后来新增的员工可被调度。
     const done = await connection.query('SELECT id FROM schema_migrations WHERE name = ? LIMIT 1', [MIGRATION_NAME]);
-    if ((done as Array<{ id: number }>).length) return { ...result, skipped: true };
+    const legacyMigrationDone = (done as Array<{ id: number }>).length > 0;
 
     await connection.beginTransaction();
 
@@ -71,7 +72,7 @@ export async function migrateToAgentPlatform(): Promise<MigrateResult> {
     // ---- 1. 每位员工一个 employee Agent ----
     const employees = (await connection.query('SELECT id, name, role, department FROM employees')) as Array<{
       id: string; name: string; role: string; department: string;
-    }>;
+    }>; 
 
     // ---- 3. 旧 Skill 迁移（先读取全部旧档案） ----
     const profiles = (await connection.query('SELECT employee_id, skills FROM employee_profiles')) as Array<{
@@ -79,21 +80,20 @@ export async function migrateToAgentPlatform(): Promise<MigrateResult> {
     }>;
 
     for (const emp of employees) {
-      const agentId = `emp_${emp.id}`;
       const exists = await connection.query('SELECT id FROM agents WHERE employee_id = ? LIMIT 1', [emp.id]);
       if (!(exists as Array<{ id: string }>).length) {
-        const systemInstructions =
-          `你是公司里的 AI 员工“${emp.name}”，职位“${emp.role}”，所属部门“${emp.department}”。` +
-          `\n以该职位的专业能力思考并回复，给出具体、可靠、可执行的建议。信息不足时先提出最关键的澄清问题。`;
+        const agent = buildEmployeeAgent(emp);
         await connection.query(
           `INSERT INTO agents (id, agent_type, employee_id, name, system_instructions, model_provider, model_name, config_json, status, version)
-           VALUES (?, 'employee', ?, ?, ?, 'deepseek', 'deepseek-v4-flash', ?, 'active', 1)`,
+           VALUES (?, 'employee', ?, ?, ?, ?, ?, ?, 'active', 1)`,
           [
-            agentId,
-            emp.id,
-            emp.name,
-            systemInstructions,
-            JSON.stringify({ role: emp.role, department: emp.department, temperature: 0.6 }),
+            agent.id,
+            agent.employeeId,
+            agent.name,
+            agent.systemInstructions,
+            agent.modelProvider,
+            agent.modelName,
+            JSON.stringify(agent.config),
           ]
         );
         result.agentsCreated++;
@@ -102,6 +102,7 @@ export async function migrateToAgentPlatform(): Promise<MigrateResult> {
       }
 
       // 迁移该员工的旧 skills[] → 独立 Skill + 关联
+      if (legacyMigrationDone) continue;
       const profileRow = profiles.find((p) => p.employee_id === emp.id);
       let legacySkills: LegacySkill[] = [];
       if (profileRow?.skills) {
@@ -128,7 +129,11 @@ export async function migrateToAgentPlatform(): Promise<MigrateResult> {
       }
     }
 
-    await connection.query('INSERT INTO schema_migrations (name) VALUES (?)', [MIGRATION_NAME]);
+    if (!legacyMigrationDone) {
+      await connection.query('INSERT INTO schema_migrations (name) VALUES (?)', [MIGRATION_NAME]);
+    } else {
+      result.skipped = result.agentsCreated === 0;
+    }
     await connection.commit();
     return result;
   } catch (error) {

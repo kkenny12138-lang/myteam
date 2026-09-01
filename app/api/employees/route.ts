@@ -1,4 +1,5 @@
 import { ensureSchema, getPool, isDbConfigured } from '@/lib/db';
+import { buildEmployeeAgent } from '@/lib/agent/employee-agent';
 
 type Employee = { id: string; name: string; role: string; department: string; initials: string; color: string; online: boolean };
 
@@ -69,13 +70,38 @@ export async function POST(request: Request) {
     }
     if (!isDbConfigured()) return Response.json({ error: '数据库未配置' }, { status: 503 });
     await ensureSchema();
-    const duplicate = await getPool().query('SELECT id FROM employees WHERE id = ? OR name = ? LIMIT 1', [employee.id, employee.name.trim()]) as Array<Record<string, unknown>>;
-    if (duplicate.length) return Response.json({ error: '员工已存在' }, { status: 409 });
-    await getPool().query(
-      `INSERT INTO employees (id, name, role, department, initials, color, online, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM (SELECT sort_order FROM employees) AS employee_order))`,
-      [employee.id.trim(), employee.name.trim(), employee.role?.trim() || '招聘专员', employee.department.trim(), employee.initials?.trim() || employee.name.trim().slice(0, 2), employee.color || '#3478f6', employee.online ? 1 : 0]
-    );
+    const normalized = {
+      id: employee.id.trim(),
+      name: employee.name.trim(),
+      role: employee.role?.trim() || '招聘专员',
+      department: employee.department.trim(),
+    };
+    const agent = buildEmployeeAgent(normalized);
+    const connection = await getPool().getConnection();
+    try {
+      await connection.beginTransaction();
+      const duplicate = await connection.query('SELECT id FROM employees WHERE id = ? OR name = ? LIMIT 1', [normalized.id, normalized.name]) as Array<Record<string, unknown>>;
+      if (duplicate.length) {
+        await connection.rollback();
+        return Response.json({ error: '员工已存在' }, { status: 409 });
+      }
+      await connection.query(
+        `INSERT INTO employees (id, name, role, department, initials, color, online, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM (SELECT sort_order FROM employees) AS employee_order))`,
+        [normalized.id, normalized.name, normalized.role, normalized.department, employee.initials?.trim() || normalized.name.slice(0, 2), employee.color || '#3478f6', employee.online ? 1 : 0]
+      );
+      await connection.query(
+        `INSERT INTO agents (id, agent_type, employee_id, name, system_instructions, model_provider, model_name, config_json, status, version)
+         VALUES (?, 'employee', ?, ?, ?, ?, ?, ?, 'active', 1)`,
+        [agent.id, agent.employeeId, agent.name, agent.systemInstructions, agent.modelProvider, agent.modelName, JSON.stringify(agent.config)]
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
     return Response.json({ employee }, { status: 201 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : '新增员工失败' }, { status: 500 });
