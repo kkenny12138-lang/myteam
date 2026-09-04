@@ -35,7 +35,7 @@ type ChatRequest = {
 export async function POST(request: Request) {
   try {
     const body = await request.json() as ChatRequest;
-    if (!body.messages || !Array.isArray(body.messages) || !(body.model === 'kimi' || body.model === 'deepseek')) {
+    if (!body.messages || !Array.isArray(body.messages) || !(body.model === 'kimi' || body.model === 'deepseek' || body.model === 'openai')) {
       return Response.json({ error: '请求格式不正确' }, { status: 400 });
     }
 

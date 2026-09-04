@@ -4,6 +4,7 @@
  */
 import type { GenerateResult, MessageContentPart, Usage } from '@/lib/agent/types';
 import { FatalError, RetryableError } from '@/lib/models/gateway';
+import { getRuntimeModelConfig } from '@/lib/repositories/model-configs';
 
 const ENDPOINT = 'https://api.deepseek.com/chat/completions';
 
@@ -30,10 +31,13 @@ function toProviderContent(content: string | MessageContentPart[]) {
 }
 
 export async function generateDeepSeek(params: GenerateParamsLike): Promise<GenerateResult> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+  const runtimeConfig = await getRuntimeModelConfig('deepseek');
+  if (!runtimeConfig.enabled) throw new FatalError('DeepSeek 已在模型配置表中停用');
+  const apiKey = runtimeConfig.apiKey;
   if (!apiKey) throw new FatalError('本地尚未配置 DEEPSEEK_API_KEY');
+  const modelName = runtimeConfig.modelName || params.model;
   const body: Record<string, unknown> = {
-    model: params.model,
+    model: modelName,
     messages: [{ role: 'system', content: params.system }, ...params.messages.map((m) => ({ role: m.role, content: toProviderContent(m.content) }))],
     stream: false,
     temperature: params.temperature ?? 0.6,
@@ -71,5 +75,5 @@ export async function generateDeepSeek(params: GenerateParamsLike): Promise<Gene
     completionTokens: data.usage?.completion_tokens ?? 0,
     totalTokens: data.usage?.total_tokens ?? 0,
   };
-  return { text, usage, modelName: params.model };
+  return { text, usage, modelName };
 }

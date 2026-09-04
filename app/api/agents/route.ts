@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const payload = validateAgentPayload(body, true);
-    const provider = payload.modelProvider === 'kimi' ? 'kimi' : 'deepseek';
+    const provider = payload.modelProvider === 'kimi' || payload.modelProvider === 'openai' ? payload.modelProvider : 'deepseek';
     const id = payload.id ?? newAgentId('agent');
     const agent: AgentRecord = {
       id,

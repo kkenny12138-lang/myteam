@@ -103,7 +103,7 @@ export function validateAgentPayload(body: unknown, isCreate: boolean): {
   const name = body.name;
   if (typeof name !== 'string' || !name.trim()) throw new ApiError('invalid_name', 'name 不能为空');
   if (body.employeeId !== undefined && body.employeeId !== null && typeof body.employeeId !== 'string') throw new ApiError('invalid_employee', 'employeeId 必须是字符串或 null');
-  if (body.modelProvider !== undefined && body.modelProvider !== 'kimi' && body.modelProvider !== 'deepseek') throw new ApiError('invalid_provider', 'modelProvider 必须是 kimi 或 deepseek');
+  if (body.modelProvider !== undefined && body.modelProvider !== 'kimi' && body.modelProvider !== 'deepseek' && body.modelProvider !== 'openai') throw new ApiError('invalid_provider', 'modelProvider 必须是 kimi、deepseek 或 openai');
   if (body.systemInstructions !== undefined && typeof body.systemInstructions !== 'string') throw new ApiError('invalid_instructions', 'systemInstructions 必须是字符串');
   const agentStatus = typeof body.status === 'string' ? body.status : undefined;
   if (agentStatus !== undefined && !['draft', 'active', 'disabled'].includes(agentStatus)) throw new ApiError('invalid_status', 'status 必须是 draft/active/disabled');

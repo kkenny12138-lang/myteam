@@ -33,7 +33,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       {
         name: payload.name,
         systemInstructions: payload.systemInstructions,
-        modelProvider: payload.modelProvider as 'kimi' | 'deepseek' | undefined,
+        modelProvider: payload.modelProvider as AgentRecord['modelProvider'] | undefined,
         modelName: payload.modelName,
         config: payload.config as AgentRecord['config'] | undefined,
         status: payload.status as AgentRecord['status'] | undefined,

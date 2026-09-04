@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     const history = (body as { history?: Array<{ role: 'user' | 'assistant'; content: string }> }).history;
     const personaAgentId = (body as { personaAgentId?: unknown }).personaAgentId;
     const modelRaw = (body as { model?: unknown }).model;
-    const model = modelRaw === 'kimi' || modelRaw === 'deepseek' ? modelRaw : undefined;
+    const model = modelRaw === 'kimi' || modelRaw === 'deepseek' || modelRaw === 'openai' ? modelRaw : undefined;
     const outcome = await startRun({
       conversationId: input.conversationId,
       agentId: input.agentId,

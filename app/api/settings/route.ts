@@ -6,10 +6,10 @@ const KEY_STARTS = 'contextStarts';
 const KEY_EMP_MODELS = 'employeeModels';
 
 type SettingsBody = {
-  chatModel?: 'kimi' | 'deepseek';
+  chatModel?: 'kimi' | 'deepseek' | 'openai';
   answerMode?: 'fast' | 'deep';
   contextStarts?: Record<string, number>;
-  employeeModels?: Record<string, 'kimi' | 'deepseek'>;
+  employeeModels?: Record<string, 'kimi' | 'deepseek' | 'openai'>;
 };
 
 /** GET /api/settings — 返回全局设置（对话模型 / 回答模式 / 上下文起始点） */
@@ -28,14 +28,14 @@ export async function GET() {
         contextStarts = null;
       }
     }
-    let employeeModels: Record<string, 'kimi' | 'deepseek'> | null = null;
+    let employeeModels: Record<string, 'kimi' | 'deepseek' | 'openai'> | null = null;
     if (map[KEY_EMP_MODELS]) {
       try {
         const parsed = JSON.parse(map[KEY_EMP_MODELS]);
         if (parsed && typeof parsed === 'object') {
           employeeModels = {};
           for (const [k, v] of Object.entries(parsed)) {
-            if (v === 'kimi' || v === 'deepseek') employeeModels[k] = v;
+            if (v === 'kimi' || v === 'deepseek' || v === 'openai') employeeModels[k] = v;
           }
         }
       } catch {
@@ -44,7 +44,7 @@ export async function GET() {
     }
     return Response.json({
       settings: {
-        chatModel: map[KEY_MODEL] === 'kimi' || map[KEY_MODEL] === 'deepseek' ? map[KEY_MODEL] : null,
+        chatModel: map[KEY_MODEL] === 'kimi' || map[KEY_MODEL] === 'deepseek' || map[KEY_MODEL] === 'openai' ? map[KEY_MODEL] : null,
         answerMode: map[KEY_MODE] === 'fast' || map[KEY_MODE] === 'deep' ? map[KEY_MODE] : null,
         contextStarts,
         employeeModels,

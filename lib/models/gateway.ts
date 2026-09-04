@@ -8,6 +8,7 @@
 import type { ChatMessage, GenerateResult, ModelProvider, Usage } from '@/lib/agent/types';
 import { generateDeepSeek } from '@/lib/models/deepseek';
 import { generateKimi } from '@/lib/models/kimi';
+import { generateOpenAI } from '@/lib/models/openai';
 
 export interface GenerateParams {
   provider: ModelProvider;
@@ -37,11 +38,13 @@ export interface ModelRequestOptions {
 const PROVIDER_MODEL_DEFAULT: Record<ModelProvider, string> = {
   deepseek: 'deepseek-v4-flash',
   kimi: 'kimi-k2.6',
+  openai: 'gpt-5.4',
 };
 
 /** 根据 provider 返回默认模型名（可被 agent.model_name 覆盖） */
 export function defaultModel(provider: ModelProvider): string {
-  return process.env[provider === 'deepseek' ? 'DEEPSEEK_MODEL' : 'KIMI_MODEL'] || PROVIDER_MODEL_DEFAULT[provider];
+  const key = provider === 'deepseek' ? 'DEEPSEEK_MODEL' : provider === 'kimi' ? 'KIMI_MODEL' : 'OPENAI_MODEL';
+  return process.env[key] || PROVIDER_MODEL_DEFAULT[provider];
 }
 
 /** 模型能力配置（docs/MULTIMODAL_ATTACHMENT_DEVELOPMENT_PLAN.md §8） */
@@ -59,12 +62,18 @@ export interface ModelCapabilities {
  * 环境变量 DEEPSEEK_IMAGE_INPUT / KIMI_IMAGE_INPUT 可强制覆盖（true=开启，false=关闭）。
  */
 export function modelCapabilities(provider: ModelProvider, model: string): ModelCapabilities {
-  const envImage = provider === 'deepseek' ? process.env.DEEPSEEK_IMAGE_INPUT : process.env.KIMI_IMAGE_INPUT;
+  const envImage = provider === 'deepseek'
+    ? process.env.DEEPSEEK_IMAGE_INPUT
+    : provider === 'kimi'
+      ? process.env.KIMI_IMAGE_INPUT
+      : process.env.OPENAI_IMAGE_INPUT;
   let imageInput: boolean;
   if (envImage) {
     imageInput = /^(1|true|yes)$/i.test(envImage);
   } else if (provider === 'kimi') {
     imageInput = /kimi-k3|kimi-k2\.7|kimi-k2\.6|kimi-latest|vision/i.test(model);
+  } else if (provider === 'openai') {
+    imageInput = /^gpt-/i.test(model);
   } else {
     imageInput = false;
   }
@@ -84,6 +93,8 @@ export async function generate(params: GenerateParams, options?: ModelRequestOpt
       return generateDeepSeek(opts);
     case 'kimi':
       return generateKimi(opts);
+    case 'openai':
+      return generateOpenAI(opts);
     default:
       throw new FatalError(`不支持的模型提供商: ${String(params.provider)}`);
   }

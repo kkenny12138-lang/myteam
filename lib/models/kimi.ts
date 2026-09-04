@@ -4,6 +4,7 @@
  */
 import type { GenerateResult, MessageContentPart, Usage } from '@/lib/agent/types';
 import { FatalError, RetryableError } from '@/lib/models/gateway';
+import { getRuntimeModelConfig } from '@/lib/repositories/model-configs';
 
 const ENDPOINT = 'https://api.moonshot.cn/v1/chat/completions';
 
@@ -30,12 +31,15 @@ function toProviderContent(content: string | MessageContentPart[]) {
 }
 
 export async function generateKimi(params: GenerateParamsLike): Promise<GenerateResult> {
-  const apiKey = process.env.KIMI_API_KEY;
+  const runtimeConfig = await getRuntimeModelConfig('kimi');
+  if (!runtimeConfig.enabled) throw new FatalError('Kimi 已在模型配置表中停用');
+  const apiKey = runtimeConfig.apiKey;
   if (!apiKey) throw new FatalError('本地尚未配置 KIMI_API_KEY');
+  const modelName = runtimeConfig.modelName || params.model;
   // kimi-k2 系列是推理模型，只允许 temperature=1；其它模型沿用调用方传入值
-  const isReasoningModel = /^kimi-k2/i.test(params.model);
+  const isReasoningModel = /^kimi-k2/i.test(modelName);
   const body: Record<string, unknown> = {
-    model: params.model,
+    model: modelName,
     messages: [{ role: 'system', content: params.system }, ...params.messages.map((m) => ({ role: m.role, content: toProviderContent(m.content) }))],
     stream: false,
     temperature: isReasoningModel ? 1 : (params.temperature ?? 0.6),
@@ -87,7 +91,7 @@ export async function generateKimi(params: GenerateParamsLike): Promise<Generate
     completionTokens: data.usage?.completion_tokens ?? 0,
     totalTokens: data.usage?.total_tokens ?? 0,
   };
-  return { text, usage, modelName: params.model };
+  return { text, usage, modelName };
 }
 
 const FILES_ENDPOINT = 'https://api.moonshot.cn/v1/files';
@@ -106,7 +110,7 @@ export async function extractKimiFile(
   filename: string,
   mimeType: string
 ): Promise<string | null> {
-  const apiKey = process.env.KIMI_API_KEY;
+  const apiKey = (await getRuntimeModelConfig('kimi')).apiKey;
   if (!apiKey) return null;
   try {
     const form = new FormData();

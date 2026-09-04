@@ -19,7 +19,7 @@ export type RunStatus =
 export type ChatRole = 'system' | 'user' | 'assistant';
 
 /** 模型提供商 */
-export type ModelProvider = 'kimi' | 'deepseek';
+export type ModelProvider = 'kimi' | 'deepseek' | 'openai';
 
 /** 附件状态 */
 export type AttachmentStatus =

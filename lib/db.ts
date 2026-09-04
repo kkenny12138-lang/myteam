@@ -69,6 +69,17 @@ const SCHEMA_STATEMENTS = [
   v VARCHAR(1000) NOT NULL,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS model_configs (
+  provider VARCHAR(30) PRIMARY KEY,
+  display_name VARCHAR(100) NOT NULL,
+  model_name VARCHAR(100) NOT NULL,
+  api_key_encrypted MEDIUMTEXT NOT NULL,
+  enabled TINYINT(1) NOT NULL DEFAULT 1,
+  image_input TINYINT(1) DEFAULT NULL,
+  config_json JSON NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS employee_profiles (
   employee_id VARCHAR(50) PRIMARY KEY,
   summary MEDIUMTEXT NOT NULL,
@@ -275,6 +286,7 @@ export function ensureSchema(): Promise<void> {
         await ensureColumn('employee_profiles', 'not_good_at', 'MEDIUMTEXT');
         await ensureColumn('employee_profiles', 'career', 'MEDIUMTEXT');
         await ensureColumn('org_nodes', 'head_employee_id', 'VARCHAR(50) DEFAULT NULL');
+        await ensureColumn('model_configs', 'api_key_encrypted', "MEDIUMTEXT NOT NULL DEFAULT ''");
       } finally {
         connection.release();
       }
