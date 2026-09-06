@@ -80,9 +80,11 @@ export async function migrateToAgentPlatform(): Promise<MigrateResult> {
     }>;
 
     for (const emp of employees) {
-      const exists = await connection.query('SELECT id FROM agents WHERE employee_id = ? LIMIT 1', [emp.id]);
-      if (!(exists as Array<{ id: string }>).length) {
+      const existingRows = await connection.query('SELECT id FROM agents WHERE employee_id = ? LIMIT 1', [emp.id]) as Array<{ id: string }>;
+      let agentId: string;
+      if (!existingRows.length) {
         const agent = buildEmployeeAgent(emp);
+        agentId = agent.id;
         await connection.query(
           `INSERT INTO agents (id, agent_type, employee_id, name, system_instructions, model_provider, model_name, config_json, status, version)
            VALUES (?, 'employee', ?, ?, ?, ?, ?, ?, 'active', 1)`,
@@ -98,6 +100,7 @@ export async function migrateToAgentPlatform(): Promise<MigrateResult> {
         );
         result.agentsCreated++;
       } else {
+        agentId = existingRows[0].id;
         result.agentsExisted++;
       }
 

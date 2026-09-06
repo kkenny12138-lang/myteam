@@ -21,7 +21,7 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function fromBase64(value: string): Uint8Array {
+function fromBase64(value: string): Uint8Array<ArrayBuffer> {
   if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(value, 'base64'));
   const binary = atob(value);
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
@@ -30,7 +30,7 @@ function fromBase64(value: string): Uint8Array {
 export async function encryptModelSecret(value: string): Promise<string> {
   if (!value) return '';
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await cryptoKey(), encoder.encode(value));
+  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await cryptoKey(), new Uint8Array(encoder.encode(value)));
   return `v1:${toBase64(iv)}:${toBase64(new Uint8Array(encrypted))}`;
 }
 
