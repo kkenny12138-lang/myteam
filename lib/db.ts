@@ -153,6 +153,43 @@ const SCHEMA_STATEMENTS = [
   PRIMARY KEY (message_type, message_id, attachment_id),
   INDEX idx_ma_attachment (attachment_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  // ---- S0：独立会话 + 服务端增量消息（docs/FEATURE_DEVELOPMENT_ROADMAP.md §4.2）----
+  `CREATE TABLE IF NOT EXISTS conversations (
+  id VARCHAR(64) PRIMARY KEY,
+  type ENUM('single','group') NOT NULL,
+  employee_id VARCHAR(50) NULL,
+  group_id VARCHAR(50) NULL,
+  title VARCHAR(200) NOT NULL DEFAULT '',
+  version INT NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_conversation_employee (employee_id),
+  INDEX idx_conversation_group (group_id),
+  INDEX idx_conversation_updated (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS conversation_messages (
+  id VARCHAR(64) PRIMARY KEY,
+  conversation_id VARCHAR(64) NOT NULL,
+  seq BIGINT NOT NULL AUTO_INCREMENT,
+  sender ENUM('me','employee') NOT NULL,
+  sender_name VARCHAR(100) NOT NULL DEFAULT '',
+  text MEDIUMTEXT NOT NULL,
+  tokens INT NOT NULL DEFAULT 0,
+  run_id VARCHAR(64) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_convmsg_seq (seq),
+  INDEX idx_convmsg_conversation (conversation_id, seq)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS conversation_message_attachments (
+  message_id VARCHAR(64) NOT NULL,
+  attachment_id VARCHAR(64) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (message_id, attachment_id),
+  INDEX idx_cma_attachment (attachment_id),
+  CONSTRAINT fk_cma_message FOREIGN KEY (message_id) REFERENCES conversation_messages (id) ON DELETE CASCADE,
+  CONSTRAINT fk_cma_attachment FOREIGN KEY (attachment_id) REFERENCES attachments (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   // ---- Agent 平台（docs/AGENT_PLATFORM_TECHNICAL_DESIGN.md §4.2）----
   `CREATE TABLE IF NOT EXISTS agents (
   id VARCHAR(64) PRIMARY KEY,
