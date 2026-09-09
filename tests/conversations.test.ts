@@ -25,6 +25,8 @@ import {
 import { migrateToConversations, resetConversationMigration, verifyConversationMigration } from '@/lib/agent/conversation-migrate';
 import { createAttachment } from '@/lib/repositories/attachments';
 
+const LEGACY = 'tenant_legacy';
+
 const dbAvailable = await (async () => {
   if (!isDbConfigured()) return false;
   try {
@@ -68,21 +70,21 @@ describe.skipIf(!dbAvailable)('S0 会话与增量消息（集成）', () => {
 
   describe('并发追加消息不丢失', () => {
     it('同一会话并发追加 N 条消息全部落库且 seq 单调', async () => {
-      const conv = await createConversation({ type: 'single', employeeId: 'tst_emp_conc' });
+      const conv = await createConversation(LEGACY, { type: 'single', employeeId: 'tst_emp_conc' });
       const N = 12;
       await Promise.all(
         Array.from({ length: N }, (_, i) =>
-          appendMessage({ conversationId: conv.id, id: `tst_m_conc_${i}`, sender: i % 2 === 0 ? 'me' : 'employee', text: `消息 ${i}` })
+          appendMessage(LEGACY, { conversationId: conv.id, id: `tst_m_conc_${i}`, sender: i % 2 === 0 ? 'me' : 'employee', text: `消息 ${i}` })
         )
       );
-      const page = await listMessages(conv.id, { limit: 200 });
+      const page = await listMessages(LEGACY, conv.id, { limit: 200 });
       expect(page.items.length).toBe(N);
       expect(page.items.map((m) => m.id).sort()).toEqual(Array.from({ length: N }, (_, i) => `tst_m_conc_${i}`).sort());
       const seqs = page.items.map((m) => m.seq);
       expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
       expect(new Set(seqs).size).toBe(N);
 
-      const list = await listConversations({ limit: 200 });
+      const list = await listConversations(LEGACY, { limit: 200 });
       expect(list.items.some((c) => c.id === conv.id)).toBe(true);
     });
   });
@@ -91,16 +93,16 @@ describe.skipIf(!dbAvailable)('S0 会话与增量消息（集成）', () => {
     it('迁移两次结果一致，旧消息 ID/顺序/附件关联完整保留', async () => {
       const empId = 'tst_emp_mig';
       await q('INSERT INTO employees (id, name, role, department, initials, color, online) VALUES (?, ?, ?, ?, ?, ?, 1)', [empId, '迁移员工', '专员', '测试部', '迁', '#888888']);
-      await q('INSERT INTO messages (id, employee_id, sender, text, time, tokens) VALUES (?, ?, ?, ?, ?, ?)', ['tst_msg_m1', empId, 'me', '你好', '', 0]);
-      await q('INSERT INTO messages (id, employee_id, sender, text, time, tokens) VALUES (?, ?, ?, ?, ?, ?)', ['tst_msg_m2', empId, 'employee', '你好，有什么可以帮你', '', 5]);
-      await q('INSERT INTO messages (id, employee_id, sender, text, time, tokens) VALUES (?, ?, ?, ?, ?, ?)', ['tst_msg_m3', empId, 'me', '帮我做个分析', '', 0]);
+      await q('INSERT INTO messages (id, tenant_id, employee_id, sender, text, time, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)', ['tst_msg_m1', LEGACY, empId, 'me', '你好', '', 0]);
+      await q('INSERT INTO messages (id, tenant_id, employee_id, sender, text, time, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)', ['tst_msg_m2', LEGACY, empId, 'employee', '你好，有什么可以帮你', '', 5]);
+      await q('INSERT INTO messages (id, tenant_id, employee_id, sender, text, time, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)', ['tst_msg_m3', LEGACY, empId, 'me', '帮我做个分析', '', 0]);
 
       const groupId = 'tst_grp_mig';
-      await q('INSERT INTO chat_groups (id, name, members) VALUES (?, ?, ?)', [groupId, '迁移群', JSON.stringify([empId])]);
-      await q('INSERT INTO group_messages (id, group_id, sender, sender_name, text, time, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)', ['tst_msg_g1', groupId, 'me', '', '群聊消息', '', 0]);
+      await q('INSERT INTO chat_groups (id, tenant_id, name, members) VALUES (?, ?, ?, ?)', [groupId, LEGACY, '迁移群', JSON.stringify([empId])]);
+      await q('INSERT INTO group_messages (id, tenant_id, group_id, sender, sender_name, text, time, tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', ['tst_msg_g1', LEGACY, groupId, 'me', '', '群聊消息', '', 0]);
 
-      await createAttachment({ id: 'att_tst_mig', ownerType: 'single', ownerId: empId, originalName: 'a.txt', mimeType: 'text/plain', sizeBytes: 3, category: 'text', status: 'ready', extractedText: null, extractionMeta: null, data: null });
-      await q('INSERT INTO message_attachments (message_type, message_id, attachment_id, sort_order) VALUES (?, ?, ?, ?)', ['single', 'tst_msg_m1', 'att_tst_mig', 0]);
+      await createAttachment(LEGACY, { id: 'att_tst_mig', ownerType: 'single', ownerId: empId, originalName: 'a.txt', mimeType: 'text/plain', sizeBytes: 3, category: 'text', status: 'ready', extractedText: null, extractionMeta: null, data: null });
+      await q('INSERT INTO message_attachments (tenant_id, message_type, message_id, attachment_id, sort_order) VALUES (?, ?, ?, ?, ?)', [LEGACY, 'single', 'tst_msg_m1', 'att_tst_mig', 0]);
 
       const first = await migrateToConversations();
       expect(first.verified).toBe(true);
@@ -119,11 +121,11 @@ describe.skipIf(!dbAvailable)('S0 会话与增量消息（集成）', () => {
       expect(verification.ok).toBe(true);
 
       const dmId = defaultConversationId('single', empId);
-      const page = await listMessages(dmId, { limit: 200 });
+      const page = await listMessages(LEGACY, dmId, { limit: 200 });
       expect(page.items.map((m) => m.id)).toEqual(['tst_msg_m1', 'tst_msg_m2', 'tst_msg_m3']);
       expect(page.items[0].attachments.map((a) => a.id)).toEqual(['att_tst_mig']);
 
-      const groupPage = await listMessages(defaultConversationId('group', groupId), { limit: 200 });
+      const groupPage = await listMessages(LEGACY, defaultConversationId('group', groupId), { limit: 200 });
       expect(groupPage.items.map((m) => m.id)).toEqual(['tst_msg_g1']);
       expect(groupPage.items[0].text).toBe('群聊消息');
     });
@@ -131,39 +133,39 @@ describe.skipIf(!dbAvailable)('S0 会话与增量消息（集成）', () => {
 
   describe('附件关联失败回滚', () => {
     it('引用不存在的附件时整条消息回滚，不落库', async () => {
-      const conv = await createConversation({ type: 'single', employeeId: 'tst_emp_rollback' });
+      const conv = await createConversation(LEGACY, { type: 'single', employeeId: 'tst_emp_rollback' });
       let threw = false;
       try {
-        await appendMessage({ conversationId: conv.id, id: 'tst_msg_rollback', sender: 'me', text: '带坏附件', attachmentIds: ['att_not_exists'] });
+        await appendMessage(LEGACY, { conversationId: conv.id, id: 'tst_msg_rollback', sender: 'me', text: '带坏附件', attachmentIds: ['att_not_exists'] });
       } catch {
         threw = true;
       }
       expect(threw).toBe(true);
-      const page = await listMessages(conv.id, { limit: 200 });
+      const page = await listMessages(LEGACY, conv.id, { limit: 200 });
       expect(page.items.length).toBe(0);
     });
 
     it('引用属于其他会话的附件同样回滚', async () => {
-      const convA = await createConversation({ type: 'single', employeeId: 'tst_emp_a' });
-      await createConversation({ type: 'single', employeeId: 'tst_emp_b' });
-      await createAttachment({ id: 'att_tst_owned', ownerType: 'single', ownerId: 'tst_emp_b', originalName: 'b.txt', mimeType: 'text/plain', sizeBytes: 3, category: 'text', status: 'ready', extractedText: null, extractionMeta: null, data: null });
+      const convA = await createConversation(LEGACY, { type: 'single', employeeId: 'tst_emp_a' });
+      await createConversation(LEGACY, { type: 'single', employeeId: 'tst_emp_b' });
+      await createAttachment(LEGACY, { id: 'att_tst_owned', ownerType: 'single', ownerId: 'tst_emp_b', originalName: 'b.txt', mimeType: 'text/plain', sizeBytes: 3, category: 'text', status: 'ready', extractedText: null, extractionMeta: null, data: null });
       let threw = false;
       try {
-        await appendMessage({ conversationId: convA.id, sender: 'me', text: '越权附件', attachmentIds: ['att_tst_owned'] });
+        await appendMessage(LEGACY, { conversationId: convA.id, sender: 'me', text: '越权附件', attachmentIds: ['att_tst_owned'] });
       } catch {
         threw = true;
       }
       expect(threw).toBe(true);
-      const page = await listMessages(convA.id, { limit: 200 });
+      const page = await listMessages(LEGACY, convA.id, { limit: 200 });
       expect(page.items.length).toBe(0);
     });
 
     it('附件归属正确时消息与关联都落库', async () => {
-      const conv = await createConversation({ type: 'single', employeeId: 'tst_emp_ok' });
-      await createAttachment({ id: 'att_tst_ok', ownerType: 'single', ownerId: 'tst_emp_ok', originalName: 'ok.txt', mimeType: 'text/plain', sizeBytes: 3, category: 'text', status: 'ready', extractedText: null, extractionMeta: null, data: null });
-      const msg = await appendMessage({ conversationId: conv.id, sender: 'me', text: '带附件', attachmentIds: ['att_tst_ok'] });
+      const conv = await createConversation(LEGACY, { type: 'single', employeeId: 'tst_emp_ok' });
+      await createAttachment(LEGACY, { id: 'att_tst_ok', ownerType: 'single', ownerId: 'tst_emp_ok', originalName: 'ok.txt', mimeType: 'text/plain', sizeBytes: 3, category: 'text', status: 'ready', extractedText: null, extractionMeta: null, data: null });
+      const msg = await appendMessage(LEGACY, { conversationId: conv.id, sender: 'me', text: '带附件', attachmentIds: ['att_tst_ok'] });
       expect(msg.attachments.map((a) => a.id)).toEqual(['att_tst_ok']);
-      const page = await listMessages(conv.id, { limit: 200 });
+      const page = await listMessages(LEGACY, conv.id, { limit: 200 });
       expect(page.items.length).toBe(1);
       expect(page.items[0].attachments.map((a) => a.id)).toEqual(['att_tst_ok']);
     });
@@ -171,13 +173,13 @@ describe.skipIf(!dbAvailable)('S0 会话与增量消息（集成）', () => {
 
   describe('游标分页与恢复方法', () => {
     it('按 seq 游标翻页不重不漏', async () => {
-      const conv = await createConversation({ type: 'single', employeeId: 'tst_emp_page' });
+      const conv = await createConversation(LEGACY, { type: 'single', employeeId: 'tst_emp_page' });
       for (let i = 0; i < 5; i++) {
-        await appendMessage({ conversationId: conv.id, id: `tst_msg_page_${i}`, sender: 'me', text: `第 ${i} 条` });
+        await appendMessage(LEGACY, { conversationId: conv.id, id: `tst_msg_page_${i}`, sender: 'me', text: `第 ${i} 条` });
       }
-      const p1 = await listMessages(conv.id, { limit: 2 });
-      const p2 = await listMessages(conv.id, { cursor: p1.nextCursor, limit: 2 });
-      const p3 = await listMessages(conv.id, { cursor: p2.nextCursor, limit: 2 });
+      const p1 = await listMessages(LEGACY, conv.id, { limit: 2 });
+      const p2 = await listMessages(LEGACY, conv.id, { cursor: p1.nextCursor, limit: 2 });
+      const p3 = await listMessages(LEGACY, conv.id, { cursor: p2.nextCursor, limit: 2 });
       expect(p1.items.length).toBe(2);
       expect(p2.items.length).toBe(2);
       expect(p3.items.length).toBe(1);
@@ -189,7 +191,7 @@ describe.skipIf(!dbAvailable)('S0 会话与增量消息（集成）', () => {
     it('恢复方法清空新表但不触碰旧表数据', async () => {
       const empId = 'tst_emp_recover';
       await q('INSERT INTO employees (id, name, role, department, initials, color, online) VALUES (?, ?, ?, ?, ?, ?, 1)', [empId, '恢复员工', '专员', '测试部', '恢', '#888888']);
-      await q('INSERT INTO messages (id, employee_id, sender, text, time, tokens) VALUES (?, ?, ?, ?, ?, ?)', ['tst_msg_rec', empId, 'me', '旧数据', '', 0]);
+      await q('INSERT INTO messages (id, tenant_id, employee_id, sender, text, time, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)', ['tst_msg_rec', LEGACY, empId, 'me', '旧数据', '', 0]);
       await migrateToConversations();
       await resetConversationMigration();
 

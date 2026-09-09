@@ -141,3 +141,194 @@
 .msg-att-chip .att-icon{font-size:15px}
 .msg-att-chip .att-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .msg-att-chip .att-size{color:#8a94a6;flex-shrink:0}
+
+/* ============================================================
+   Sprint UI-1 设计系统：Token、字号、触控热区与可访问性
+   ============================================================ */
+:root {
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --surface-page: #f6f8fb;
+  --surface-card: #ffffff;
+  --surface-subtle: #f7f9fd;
+  --text-primary: #172033;
+  --text-secondary: #526078;
+  --text-tertiary: #7a8499;
+  --border-default: #e8ebf1;
+  --action-primary: #3478f6;
+  --state-success: #16a775;
+  --state-warning: #d17832;
+  --state-danger: #d15757;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --radius-card: 16px;
+  --radius-control: 10px;
+  --radius-chip: 8px;
+  --control-height: 44px;
+  --focus-ring: 0 0 0 3px rgba(52, 120, 246, 0.28);
+}
+
+/* 元数据（时间/数量/状态/标签）不低于 12px */
+.im-shell .eyebrow{font-size:var(--text-xs);letter-spacing:.14em}
+.nav-button span{font-size:var(--text-xs)}
+.section-label{font-size:var(--text-xs)}
+.name-line time{font-size:var(--text-xs)}
+.conversation-copy>span{font-size:var(--text-xs)}
+.chat-header p{font-size:var(--text-xs)}
+.day-divider span{font-size:var(--text-xs)}
+.message-row time{font-size:var(--text-xs)}
+.composer-tools span{font-size:var(--text-xs)}
+.composer-footer span{font-size:var(--text-xs)}
+.context-divider{font-size:var(--text-xs)}
+.org-summary span{font-size:var(--text-xs)}
+.department-card p{font-size:var(--text-xs)}
+.member-list span{font-size:var(--text-xs)}
+.org-node-count{font-size:var(--text-xs)}
+.org-tree-foot{font-size:var(--text-xs)}
+.org-detail-header p{font-size:var(--text-xs)}
+.org-member-main span{font-size:var(--text-xs)}
+.emp-title p{font-size:var(--text-xs)}
+.emp-basic-item span{font-size:var(--text-xs)}
+.decision-card header p{font-size:var(--text-xs)}
+.decision-node span{font-size:var(--text-xs)}
+.employee-info-title p{font-size:var(--text-xs)}
+.profile-section.skills-section li span{font-size:var(--text-xs)}
+.member-skills{font-size:var(--text-xs)}
+.member-skills .skill-chips span{font-size:var(--text-xs)!important}
+.member-skills em{font-size:var(--text-xs)}
+.member-expertise{font-size:var(--text-xs)}
+.trait-list span{font-size:var(--text-xs)!important}
+.emp-skill-meta{font-size:var(--text-xs)}
+.emp-skill-list li span{font-size:var(--text-xs)}
+.mention-menu small{font-size:var(--text-xs)}
+.department-candidates small{font-size:var(--text-xs)}
+.msg-tokens{font-size:var(--text-xs)}
+.member-online,.member-offline{font-size:var(--text-xs)!important}
+.member-head-tag{font-size:var(--text-xs)!important}
+.db-pill{font-size:var(--text-xs)}
+.run-trace-badge{font-size:var(--text-xs)}
+.run-trace-tokens{font-size:var(--text-xs)}
+.run-trace-reason{font-size:var(--text-xs)}
+.run-trace-status{font-size:var(--text-xs)}
+.run-trace-task{font-size:var(--text-xs)}
+.run-trace-think{font-size:var(--text-xs)}
+.run-trace-empty{font-size:var(--text-xs)}
+.trace-pending span{font-size:var(--text-xs)}
+.att-draft{font-size:var(--text-xs)}
+.msg-att-chip{font-size:var(--text-xs)}
+.org-empty,.emp-empty,.skills-empty{font-size:var(--text-xs)}
+
+/* 正文、输入内容与按钮字号 ≥ 14px */
+.search-box input{font-size:var(--text-sm)}
+.conversation-copy p{font-size:var(--text-sm)}
+.composer textarea{font-size:var(--text-md)}
+.org-header p{font-size:var(--text-sm)}
+.member-summary{font-size:var(--text-sm)!important}
+.employee-info-summary{font-size:var(--text-sm)}
+.emp-summary{font-size:var(--text-sm)}
+.org-node-desc{font-size:var(--text-sm)}
+.emp-set-value{font-size:var(--text-sm)}
+.profile-section ul{font-size:var(--text-sm)}
+.profile-section h3{font-size:var(--text-sm)}
+.emp-block h3{font-size:var(--text-sm)}
+.org-block h3{font-size:var(--text-sm)}
+.dl-help{font-size:var(--text-sm)}
+.dl-field label{font-size:var(--text-sm)}
+.employee-modal label{font-size:var(--text-sm)}
+.member-create-form label{font-size:var(--text-sm)}
+.emp-set-label{font-size:var(--text-sm)}
+.composer-footer button,.primary-action{font-size:var(--text-sm)}
+.new-chat-button{font-size:var(--text-sm)}
+.assign-button{font-size:var(--text-sm)}
+.employee-info-button{font-size:var(--text-sm)}
+.decision-edit{font-size:var(--text-sm)}
+.dl-add{font-size:var(--text-sm)}
+.dl-remove{font-size:var(--text-sm)}
+.org-go-chat{font-size:var(--text-sm)}
+.org-add-member{font-size:var(--text-sm)}
+.emp-chat-btn,.emp-save-btn,.emp-edit-btn{font-size:var(--text-sm)}
+.emp-add-btn{font-size:var(--text-sm)}
+.emp-add-input{font-size:var(--text-sm)}
+.emp-input{font-size:var(--text-sm)}
+.dl-field select,.dl-node select,.dl-node input{font-size:var(--text-sm)}
+.member-mode-tabs button{font-size:var(--text-sm)}
+.member-create-form input{font-size:var(--text-sm)}
+.model-picker select{font-size:var(--text-sm)}
+.run-trace-toggle{font-size:var(--text-sm)}
+.mention-menu strong{font-size:var(--text-sm)}
+.new-group-btn{font-size:var(--text-sm)}
+
+/* 控件尺寸与触控热区 ≥ 44px */
+.im-shell .im-profile{width:44px;height:44px}
+.mobile-back{width:44px;height:44px;text-align:center;line-height:44px}
+.composer-tools{height:48px;align-items:center}
+.composer-tools button{width:44px;height:44px;font-size:18px;border-radius:10px}
+.employee-info-button{min-height:44px;padding:0 14px;display:inline-flex;align-items:center}
+.new-chat-button{min-height:44px;padding:0 16px;display:inline-flex;align-items:center}
+.assign-button{min-height:44px;padding:0 14px}
+.header-more{min-width:44px;min-height:44px;padding:0 12px}
+.org-go-chat{min-height:44px;padding:0 14px;display:inline-flex;align-items:center}
+.org-add-member{min-height:44px;padding:0 14px}
+.decision-edit{min-height:44px;padding:0 16px;display:inline-flex;align-items:center}
+.dl-add{min-height:44px;padding:0 16px}
+.dl-remove{min-height:44px;padding:0 14px}
+.emp-chat-btn,.emp-save-btn,.emp-edit-btn{min-height:44px;padding:0 16px}
+.emp-add-btn{min-height:44px}
+.member-mode-tabs button{min-height:44px}
+.primary-action{min-height:44px}
+.composer-footer button{min-height:44px}
+.new-group-btn{min-height:44px;padding:0 12px;display:inline-flex;align-items:center}
+.employee-info-modal>header>button,.decision-line-modal>header>button,.new-group-modal>header>button,.group-info-modal>header>button,.department-member-modal header>button{width:44px;height:44px;flex:0 0 auto}
+.search-box{height:auto;min-height:44px}
+.model-picker select{min-height:44px;padding:6px 28px 6px 12px}
+.dl-field select,.dl-node select,.dl-node input,.emp-input,.emp-add-input,.member-create-form input,.employee-modal input,.gi-name-input{min-height:44px}
+
+/* 图标删除/编辑按钮语义化后保持紧凑视觉、扩大热区 */
+.emp-chip .emp-chip-rm,.emp-skill-actions .emp-chip-rm,.emp-career-list .emp-chip-rm{position:relative;display:inline-flex;align-items:center;justify-content:center;min-width:28px;min-height:28px;padding:0;border:0;background:transparent;color:#98a4b8;font-size:15px;cursor:pointer;border-radius:6px}
+.emp-chip .emp-chip-rm::after,.emp-skill-actions .emp-chip-rm::after,.emp-career-list .emp-chip-rm::after,.att-draft button::after{content:"";position:absolute;inset:-9px}
+.emp-chip .emp-chip-rm:hover{color:#e05d5d}
+.att-draft button{position:relative;display:inline-flex;align-items:center;justify-content:center}
+
+/* 键盘焦点可见 */
+.im-shell :is(button,input,textarea,select,a,[tabindex]):focus-visible{outline:2px solid var(--action-primary);outline-offset:2px}
+.im-shell button:focus:not(:focus-visible){outline:none}
+
+/* 减少动画偏好 */
+@media (prefers-reduced-motion: reduce){
+  .im-shell *,.im-shell *::before,.im-shell *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
+
+/* 移动端：不再隐藏按钮文字 */
+@media (max-width:600px){
+  .employee-info-button{font-size:var(--text-sm)}
+  .employee-info-button::after,.new-chat-button::after{content:none}
+  .new-chat-button{font-size:var(--text-sm)}
+}
+
+/* 小屏手机细化（390px） */
+@media (max-width:480px){
+  .org-panel,.decision-panel{padding:20px 12px 92px}
+  .org-header{flex-direction:column;align-items:flex-start;gap:12px}
+  .org-header-actions{flex-direction:row;align-items:center;width:100%}
+  .org-header-actions .decision-edit{flex:1}
+  .emp-basic-grid{grid-template-columns:1fr}
+  .emp-header-actions{flex-wrap:wrap}
+  .emp-set-row{flex-direction:column;align-items:stretch;gap:6px}
+  .emp-set-label{flex:0 0 auto}
+  .chat-header{flex-wrap:wrap;height:auto;min-height:60px;padding:8px 10px}
+  .chat-header>div:nth-child(3){flex:1;min-width:0}
+  .modal-backdrop{padding:8px}
+  .employee-info-modal,.decision-line-modal,.new-group-modal,.group-info-modal,.department-member-modal{max-height:90dvh;border-radius:20px 20px 0 0;align-self:end}
+  .emp-detail-header{flex-wrap:wrap}
+  .emp-title h2{font-size:18px}
+  .member-mode-tabs{grid-template-columns:1fr}
+}

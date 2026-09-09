@@ -3,16 +3,18 @@
  * GET：按 seq 游标分页；POST：追加消息 + 附件关联（同一事务）。
  */
 import { appendMessage, listMessages } from '@/lib/repositories/conversations';
+import { requireLegacyTenantContext, requireRole } from '@/lib/auth/context';
 import { ApiError, errorBody, newRequestId } from '@/lib/agent/validators';
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const requestId = newRequestId();
   try {
+    const ctx = await requireLegacyTenantContext(request);
     const { id } = await params;
     const url = new URL(request.url);
     const cursor = url.searchParams.get('cursor');
     const limit = Number(url.searchParams.get('limit') || 50);
-    const page = await listMessages(id, { cursor, limit: Number.isFinite(limit) ? limit : 50 });
+    const page = await listMessages(ctx.tenantId, id, { cursor, limit: Number.isFinite(limit) ? limit : 50 });
     return Response.json({ requestId, messages: page.items, nextCursor: page.nextCursor });
   } catch (error) {
     const status = error instanceof ApiError ? error.status : 500;
@@ -23,6 +25,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const requestId = newRequestId();
   try {
+    const ctx = await requireLegacyTenantContext(request);
+    requireRole(ctx, 'owner', 'admin', 'member');
     const { id } = await params;
     const body = await request.json().catch(() => null) as {
       sender?: string; senderName?: string; text?: string; tokens?: number; runId?: string | null; attachmentIds?: string[];
@@ -30,7 +34,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!body || typeof body !== 'object') throw new ApiError('invalid_request', '请求体必须是 JSON 对象');
     if (body.sender !== 'me' && body.sender !== 'employee') throw new ApiError('invalid_sender', 'sender 必须是 me 或 employee');
     if (typeof body.text !== 'string' || !body.text) throw new ApiError('invalid_text', 'text 不能为空');
-    const message = await appendMessage({
+    const message = await appendMessage(ctx.tenantId, {
       conversationId: id,
       sender: body.sender,
       senderName: body.senderName,

@@ -4,12 +4,14 @@
  */
 import { isDbConfigured } from '@/lib/db';
 import { getAttachmentBytes } from '@/lib/repositories/attachments';
+import { requireLegacyTenantContext } from '@/lib/auth/context';
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
     if (!isDbConfigured()) return Response.json({ error: '数据库未配置' }, { status: 503 });
     const { id } = await params;
-    const file = await getAttachmentBytes(id);
+    const file = await getAttachmentBytes(ctx.tenantId, id);
     if (!file) return Response.json({ error: '附件不存在或已删除' }, { status: 404 });
     return new Response(file.bytes as BodyInit, {
       headers: {

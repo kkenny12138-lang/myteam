@@ -4,12 +4,15 @@
  * 响应：根 run 的最终结果（含 events / plan / childRuns）。
  */
 import { startRun, type RunInput } from '@/lib/agent/runtime';
+import { requireLegacyTenantContext, requireRole } from '@/lib/auth/context';
 import { ApiError, errorBody, newRequestId, validateRunRequest } from '@/lib/agent/validators';
 import { migrateToAgentPlatform } from '@/lib/agent/migrate';
 
 export async function POST(request: Request) {
   const requestId = newRequestId();
   try {
+    const ctx = await requireLegacyTenantContext(request);
+    requireRole(ctx, 'owner', 'admin', 'member');
     let body: unknown;
     try {
       body = await request.json();
@@ -26,6 +29,7 @@ export async function POST(request: Request) {
     const modelRaw = (body as { model?: unknown }).model;
     const model = modelRaw === 'kimi' || modelRaw === 'deepseek' || modelRaw === 'openai' ? modelRaw : undefined;
     const outcome = await startRun({
+      tenantId: ctx.tenantId,
       conversationId: input.conversationId,
       agentId: input.agentId,
       message: input.message,

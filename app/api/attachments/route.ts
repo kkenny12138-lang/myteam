@@ -5,6 +5,7 @@
  */
 import { ensureSchema, isDbConfigured } from '@/lib/db';
 import { createAttachment } from '@/lib/repositories/attachments';
+import { requireLegacyTenantContext, requireRole } from '@/lib/auth/context';
 import {
   ATTACHMENT_MAX_FILE_BYTES,
   categoryOf,
@@ -34,6 +35,8 @@ function toPublic(attachment: {
 
 export async function POST(request: Request) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
+    requireRole(ctx, 'owner', 'admin', 'member');
     if (!isDbConfigured()) {
       return Response.json({ error: '数据库未配置，暂不支持附件上传' }, { status: 503 });
     }
@@ -67,7 +70,7 @@ export async function POST(request: Request) {
     const id = `att_${crypto.randomUUID()}`;
 
     await ensureSchema();
-    await createAttachment({
+    await createAttachment(ctx.tenantId, {
       id,
       ownerType: ownerType as 'single' | 'group',
       ownerId,

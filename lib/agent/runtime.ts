@@ -20,6 +20,7 @@ import { defaultModel, generate } from '@/lib/models/gateway';
 import { buildSystemPrompt } from '@/lib/agent/prompt-builder';
 
 export interface RunInput {
+  tenantId: string;
   conversationId: string;
   agentId: string;
   message: string;
@@ -60,14 +61,15 @@ export async function startRun(input: RunInput): Promise<RunOutcome> {
   const agent = await getAgentById(input.agentId);
   if (!agent) throw new ApiError('agent_not_found', `Agent 不存在: ${input.agentId}`, 404);
   assertAgentRunnable(agent.status, input.preview);
-  const persona = input.personaAgentId ? await loadAgentContext(input.personaAgentId) : null;
+  const persona = input.personaAgentId ? await loadAgentContext(input.personaAgentId, { tenantId: input.tenantId }) : null;
   const responseAgent = persona?.agent ?? agent;
 
   const rootRunId = newRunId();
   const conversationId = input.conversationId;
   const usage = emptyUsage();
+  const tenantId = input.tenantId;
 
-  await createRun({
+  await createRun(tenantId, {
     id: rootRunId,
     parentRunId: null,
     rootRunId,
@@ -77,12 +79,13 @@ export async function startRun(input: RunInput): Promise<RunOutcome> {
     inputText: input.message,
     status: 'queued',
   });
-  await appendRunEvent(rootRunId, 'planning', { agentId: agent.id, agentType: agent.agentType });
+  await appendRunEvent(tenantId, rootRunId, 'planning', { agentId: agent.id, agentType: agent.agentType });
 
   try {
     // ---- 单员工对话：直接执行（Phase 1） ----
     if (agent.agentType === 'employee') {
       const result = await executeSingle({
+        tenantId,
         runId: rootRunId,
         agentId: agent.id,
         conversationId,
@@ -91,7 +94,7 @@ export async function startRun(input: RunInput): Promise<RunOutcome> {
         mode: input.mode,
         model: input.model,
       });
-      const finalRun = await getRunOrThrow(rootRunId);
+      const finalRun = await getRunOrThrow(tenantId, rootRunId);
       return {
         rootRun: finalRun,
         status: finalRun.status,
@@ -99,7 +102,7 @@ export async function startRun(input: RunInput): Promise<RunOutcome> {
         plan: null,
         childRuns: [],
         usage: result.usage,
-        events: await listRunEvents(rootRunId),
+        events: await listRunEvents(tenantId, rootRunId),
       };
     }
 
@@ -111,22 +114,23 @@ export async function startRun(input: RunInput): Promise<RunOutcome> {
       userMessage: input.message,
       history: input.history,
       model: input.model,
+      tenantId,
     });
     const plan = planResult.plan;
     const rootUsage = addUsage(usage, planResult.usage);
-    await appendRunEvent(rootRunId, 'planned', { action: plan.action, assignments: plan.assignments, reason: plan.reason });
+    await appendRunEvent(tenantId, rootRunId, 'planned', { action: plan.action, assignments: plan.assignments, reason: plan.reason });
 
     if (plan.action === 'ask') {
-      await finishRun(rootRunId, { status: 'waiting', outputText: plan.question ?? null, latencyMs: 0 });
-      await appendRunEvent(rootRunId, 'waiting', { question: plan.question ?? '' });
+      await finishRun(tenantId, rootRunId, { status: 'waiting', outputText: plan.question ?? null, latencyMs: 0 });
+      await appendRunEvent(tenantId, rootRunId, 'waiting', { question: plan.question ?? '' });
       return {
-        rootRun: await getRunOrThrow(rootRunId),
+        rootRun: await getRunOrThrow(tenantId, rootRunId),
         status: 'waiting',
         answerText: plan.question ?? null,
         plan,
         childRuns: [],
         usage: rootUsage,
-        events: await listRunEvents(rootRunId),
+        events: await listRunEvents(tenantId, rootRunId),
       };
     }
 
@@ -149,9 +153,10 @@ export async function startRun(input: RunInput): Promise<RunOutcome> {
         messages: [...(input.history ?? []).slice(-10), { role: 'user', content: input.message }],
         temperature: responseAgent.config.temperature ?? 0.6,
         maxTokens: responseAgent.config.maxTokens ?? (input.mode === 'deep' ? 4000 : 1600),
+        tenantId,
       });
       const totalUsage = addUsage(rootUsage, result.usage);
-      await finishRun(rootRunId, {
+      await finishRun(tenantId, rootRunId, {
         status: 'succeeded',
         outputText: result.text,
         modelName,
@@ -159,15 +164,15 @@ export async function startRun(input: RunInput): Promise<RunOutcome> {
         completionTokens: totalUsage.completionTokens,
         latencyMs: 0,
       });
-      await appendRunEvent(rootRunId, 'completed', { action: 'answer' });
+      await appendRunEvent(tenantId, rootRunId, 'completed', { action: 'answer' });
       return {
-        rootRun: await getRunOrThrow(rootRunId),
+        rootRun: await getRunOrThrow(tenantId, rootRunId),
         status: 'succeeded',
         answerText: result.text,
         plan,
         childRuns: [],
         usage: totalUsage,
-        events: await listRunEvents(rootRunId),
+        events: await listRunEvents(tenantId, rootRunId),
       };
     }
 
@@ -180,9 +185,10 @@ export async function startRun(input: RunInput): Promise<RunOutcome> {
 
     // 每个 Promise 返回独立结果，不共享可变状态；最终再确定性汇总（docs 2.4）
     const runOne = async (a: { agentId: string; skillId?: string; task: string }): Promise<SubRunResult> => {
-      await appendRunEvent(rootRunId, 'delegated', { agentId: a.agentId, task: a.task.slice(0, 200) });
+      await appendRunEvent(tenantId, rootRunId, 'delegated', { agentId: a.agentId, task: a.task.slice(0, 200) });
       try {
         const res = await executeSingle({
+          tenantId,
           agentId: a.agentId,
           conversationId,
           inputText: a.task,
@@ -194,11 +200,11 @@ export async function startRun(input: RunInput): Promise<RunOutcome> {
           preview: input.preview,
           model: input.model,
         });
-        await appendRunEvent(rootRunId, 'child_completed', { agentId: a.agentId });
+        await appendRunEvent(tenantId, rootRunId, 'child_completed', { agentId: a.agentId });
         return { agentId: a.agentId, name: a.agentId, text: res.text, ok: true, usage: res.usage };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        await appendRunEvent(rootRunId, 'child_failed', { agentId: a.agentId, error: message });
+        await appendRunEvent(tenantId, rootRunId, 'child_failed', { agentId: a.agentId, error: message });
         return { agentId: a.agentId, name: a.agentId, text: '', ok: false, error: message, usage: emptyUsage() };
       }
     };
@@ -217,7 +223,7 @@ export async function startRun(input: RunInput): Promise<RunOutcome> {
       for (const a of batch) remaining.splice(remaining.indexOf(a), 1);
     }
 
-    childRuns.push(...(await listChildRuns(rootRunId)));
+    childRuns.push(...(await listChildRuns(tenantId, rootRunId)));
 
     // 确定性汇总：按 assignments 顺序合并结果，usage 用纯函数 reduce 求和
     const subResults: SubRunResult[] = assignments.map((a) => resultsByAgent.get(a.agentId) ?? { agentId: a.agentId, name: a.agentId, text: '', ok: false, error: '未执行', usage: emptyUsage() });
@@ -251,6 +257,7 @@ export async function startRun(input: RunInput): Promise<RunOutcome> {
           messages: [{ role: 'user', content: input.message }],
           temperature: 0.5,
           maxTokens: responseAgent.config.maxTokens ?? (input.mode === 'deep' ? 6000 : 3000),
+          tenantId,
         });
         finalText = syn.text;
         finalUsage = addUsage(finalUsage, syn.usage);
@@ -261,7 +268,7 @@ export async function startRun(input: RunInput): Promise<RunOutcome> {
     }
 
     const totalUsage = addUsage(rootUsage, finalUsage);
-    await finishRun(rootRunId, {
+    await finishRun(tenantId, rootRunId, {
       status: 'succeeded',
       outputText: finalText,
       modelName: synModel,
@@ -269,26 +276,26 @@ export async function startRun(input: RunInput): Promise<RunOutcome> {
       completionTokens: totalUsage.completionTokens,
       latencyMs: 0,
     });
-    await appendRunEvent(rootRunId, 'completed', { action: 'delegate', childCount: childRuns.length, synthesized: plan.synthesize !== false });
+    await appendRunEvent(tenantId, rootRunId, 'completed', { action: 'delegate', childCount: childRuns.length, synthesized: plan.synthesize !== false });
     return {
-      rootRun: await getRunOrThrow(rootRunId),
+      rootRun: await getRunOrThrow(tenantId, rootRunId),
       status: 'succeeded',
       answerText: finalText,
       plan,
       childRuns,
       usage: totalUsage,
-      events: await listRunEvents(rootRunId),
+      events: await listRunEvents(tenantId, rootRunId),
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await finishRun(rootRunId, { status: 'failed', errorText: message, latencyMs: 0 });
-    await appendRunEvent(rootRunId, 'failed', { error: message });
+    await finishRun(tenantId, rootRunId, { status: 'failed', errorText: message, latencyMs: 0 });
+    await appendRunEvent(tenantId, rootRunId, 'failed', { error: message });
     throw error;
   }
 }
 
-async function getRunOrThrow(id: string): Promise<AgentRun> {
-  const run = await getRun(id);
+async function getRunOrThrow(tenantId: string, id: string): Promise<AgentRun> {
+  const run = await getRun(tenantId, id);
   if (!run) throw new ApiError('run_not_found', `运行记录不存在: ${id}`, 404);
   return run;
 }

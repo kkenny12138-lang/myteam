@@ -1,4 +1,5 @@
 import { ensureSchema, getPool, isDbConfigured } from '@/lib/db';
+import { requireLegacyTenantContext } from '@/lib/auth/context';
 
 type Group = { id: string; name: string; members: string[] };
 
@@ -13,11 +14,12 @@ const parseMembers = (v: unknown): string[] => {
 };
 
 /** GET /api/groups — 返回全部群 */
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
     if (!isDbConfigured()) return Response.json({ groups: null }, { status: 503 });
     await ensureSchema();
-    const rows = await getPool().query('SELECT id, name, members FROM chat_groups ORDER BY created_at ASC, id ASC') as Array<Record<string, unknown>>;
+    const rows = await getPool().query('SELECT id, name, members FROM chat_groups WHERE tenant_id = ? ORDER BY created_at ASC, id ASC', [ctx.tenantId]) as Array<Record<string, unknown>>;
     const groups = rows.map((r) => ({ id: String(r.id), name: String(r.name || ''), members: parseMembers(r.members) }));
     return Response.json({ groups });
   } catch (error) {
@@ -28,6 +30,7 @@ export async function GET() {
 /** PUT /api/groups — 整体替换群列表 */
 export async function PUT(request: Request) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
     const body = await request.json() as { groups?: Group[] };
     const groups = Array.isArray(body.groups) ? body.groups : null;
     if (!groups) return Response.json({ error: '参数不正确：缺少 groups' }, { status: 400 });
@@ -37,10 +40,10 @@ export async function PUT(request: Request) {
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
-      await connection.query('DELETE FROM chat_groups');
+      await connection.query('DELETE FROM chat_groups WHERE tenant_id = ?', [ctx.tenantId]);
       for (const g of groups) {
         if (!g?.id || !g.name) continue;
-        await connection.query('INSERT INTO chat_groups (id, name, members) VALUES (?, ?, ?)', [g.id, g.name, JSON.stringify(g.members || [])]);
+        await connection.query('INSERT INTO chat_groups (id, tenant_id, name, members) VALUES (?, ?, ?, ?)', [g.id, ctx.tenantId, g.name, JSON.stringify(g.members || [])]);
       }
       await connection.commit();
     } catch (err) {
@@ -58,6 +61,7 @@ export async function PUT(request: Request) {
 /** DELETE /api/groups?id=xxx — 删除群及其消息 */
 export async function DELETE(request: Request) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
     const id = new URL(request.url).searchParams.get('id');
     if (!id) return Response.json({ error: '参数不正确：缺少 id' }, { status: 400 });
     if (!isDbConfigured()) return Response.json({ error: '数据库未配置' }, { status: 503 });
@@ -66,8 +70,8 @@ export async function DELETE(request: Request) {
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
-      await connection.query('DELETE FROM chat_groups WHERE id = ?', [id]);
-      await connection.query('DELETE FROM group_messages WHERE group_id = ?', [id]);
+      await connection.query('DELETE FROM chat_groups WHERE id = ? AND tenant_id = ?', [id, ctx.tenantId]);
+      await connection.query('DELETE FROM group_messages WHERE group_id = ? AND tenant_id = ?', [id, ctx.tenantId]);
       await connection.commit();
     } catch (err) {
       await connection.rollback();

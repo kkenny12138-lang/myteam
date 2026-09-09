@@ -1,16 +1,18 @@
 /**
  * GET /api/agent/runs/[id] — 运行状态与最终结果（docs §8）。
  */
+import { requireLegacyTenantContext } from '@/lib/auth/context';
 import { errorBody, newRequestId } from '@/lib/agent/validators';
 import { getRun, listChildRuns, listRunEvents } from '@/lib/repositories/runs';
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const requestId = newRequestId();
   try {
+    const ctx = await requireLegacyTenantContext(request);
     const { id } = await params;
-    const run = await getRun(id);
+    const run = await getRun(ctx.tenantId, id);
     if (!run) return Response.json({ code: 'run_not_found', message: `运行记录不存在: ${id}`, requestId }, { status: 404 });
-    const [childRuns, events] = await Promise.all([listChildRuns(id), listRunEvents(id)]);
+    const [childRuns, events] = await Promise.all([listChildRuns(ctx.tenantId, id), listRunEvents(ctx.tenantId, id)]);
     return Response.json({
       requestId,
       run,

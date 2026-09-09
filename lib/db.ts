@@ -57,20 +57,25 @@ const SCHEMA_STATEMENTS = [
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS messages (
   id VARCHAR(64) PRIMARY KEY,
+  tenant_id CHAR(26) NOT NULL,
   employee_id VARCHAR(50) NOT NULL,
   sender VARCHAR(10) NOT NULL,
   text MEDIUMTEXT NOT NULL,
   time VARCHAR(30) NOT NULL DEFAULT '',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_messages_tenant (tenant_id, created_at),
   INDEX idx_messages_employee (employee_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS settings (
-  k VARCHAR(50) PRIMARY KEY,
+  tenant_id CHAR(26) NOT NULL,
+  k VARCHAR(50) NOT NULL,
   v VARCHAR(1000) NOT NULL,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (tenant_id, k)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS model_configs (
-  provider VARCHAR(30) PRIMARY KEY,
+  tenant_id CHAR(26) NOT NULL,
+  provider VARCHAR(30) NOT NULL,
   display_name VARCHAR(100) NOT NULL,
   model_name VARCHAR(100) NOT NULL,
   api_key_encrypted MEDIUMTEXT NOT NULL,
@@ -78,7 +83,8 @@ const SCHEMA_STATEMENTS = [
   image_input TINYINT(1) DEFAULT NULL,
   config_json JSON NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (tenant_id, provider)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS employee_profiles (
   employee_id VARCHAR(50) PRIMARY KEY,
@@ -105,29 +111,36 @@ const SCHEMA_STATEMENTS = [
   sort_order INT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS decision_line (
-  id TINYINT PRIMARY KEY DEFAULT 1,
+  tenant_id CHAR(26) NOT NULL,
+  id TINYINT NOT NULL DEFAULT 1,
   config MEDIUMTEXT NOT NULL,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (tenant_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS chat_groups (
   id VARCHAR(50) PRIMARY KEY,
+  tenant_id CHAR(26) NOT NULL,
   name VARCHAR(100) NOT NULL,
   members MEDIUMTEXT NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_chat_groups_tenant (tenant_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS group_messages (
   id VARCHAR(64) PRIMARY KEY,
+  tenant_id CHAR(26) NOT NULL,
   group_id VARCHAR(50) NOT NULL,
   sender VARCHAR(10) NOT NULL,
   sender_name VARCHAR(100) NOT NULL DEFAULT '',
   text MEDIUMTEXT NOT NULL,
   time VARCHAR(30) NOT NULL DEFAULT '',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_group_messages_tenant (tenant_id, created_at),
   INDEX idx_group_messages (group_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   // ---- 对话附件（docs/MULTIMODAL_ATTACHMENT_DEVELOPMENT_PLAN.md §5）----
   `CREATE TABLE IF NOT EXISTS attachments (
   id VARCHAR(64) PRIMARY KEY,
+  tenant_id CHAR(26) NOT NULL,
   owner_type VARCHAR(20) NOT NULL,
   owner_id VARCHAR(64) NOT NULL,
   original_name VARCHAR(255) NOT NULL,
@@ -141,21 +154,25 @@ const SCHEMA_STATEMENTS = [
   error_message TEXT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_attachments_tenant (tenant_id, created_at),
   INDEX idx_attachment_owner (owner_type, owner_id),
   INDEX idx_attachment_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS message_attachments (
+  tenant_id CHAR(26) NOT NULL,
   message_type VARCHAR(20) NOT NULL,
   message_id VARCHAR(64) NOT NULL,
   attachment_id VARCHAR(64) NOT NULL,
   sort_order INT NOT NULL DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (message_type, message_id, attachment_id),
+  INDEX idx_ma_tenant (tenant_id),
   INDEX idx_ma_attachment (attachment_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   // ---- S0：独立会话 + 服务端增量消息（docs/FEATURE_DEVELOPMENT_ROADMAP.md §4.2）----
   `CREATE TABLE IF NOT EXISTS conversations (
   id VARCHAR(64) PRIMARY KEY,
+  tenant_id CHAR(26) NOT NULL,
   type ENUM('single','group') NOT NULL,
   employee_id VARCHAR(50) NULL,
   group_id VARCHAR(50) NULL,
@@ -163,12 +180,14 @@ const SCHEMA_STATEMENTS = [
   version INT NOT NULL DEFAULT 1,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_conversations_tenant_updated (tenant_id, updated_at, id),
   INDEX idx_conversation_employee (employee_id),
   INDEX idx_conversation_group (group_id),
   INDEX idx_conversation_updated (updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS conversation_messages (
   id VARCHAR(64) PRIMARY KEY,
+  tenant_id CHAR(26) NOT NULL,
   conversation_id VARCHAR(64) NOT NULL,
   seq BIGINT NOT NULL AUTO_INCREMENT,
   sender ENUM('me','employee') NOT NULL,
@@ -178,14 +197,17 @@ const SCHEMA_STATEMENTS = [
   run_id VARCHAR(64) NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uk_convmsg_seq (seq),
+  INDEX idx_convmsg_tenant_conversation_seq (tenant_id, conversation_id, seq),
   INDEX idx_convmsg_conversation (conversation_id, seq)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS conversation_message_attachments (
+  tenant_id CHAR(26) NOT NULL,
   message_id VARCHAR(64) NOT NULL,
   attachment_id VARCHAR(64) NOT NULL,
   sort_order INT NOT NULL DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (message_id, attachment_id),
+  INDEX idx_cma_tenant (tenant_id),
   INDEX idx_cma_attachment (attachment_id),
   CONSTRAINT fk_cma_message FOREIGN KEY (message_id) REFERENCES conversation_messages (id) ON DELETE CASCADE,
   CONSTRAINT fk_cma_attachment FOREIGN KEY (attachment_id) REFERENCES attachments (id) ON DELETE CASCADE
@@ -229,6 +251,7 @@ const SCHEMA_STATEMENTS = [
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS agent_runs (
   id VARCHAR(64) PRIMARY KEY,
+  tenant_id CHAR(26) NOT NULL,
   parent_run_id VARCHAR(64) NULL,
   root_run_id VARCHAR(64) NOT NULL,
   conversation_id VARCHAR(64) NOT NULL,
@@ -244,15 +267,18 @@ const SCHEMA_STATEMENTS = [
   latency_ms INT NOT NULL DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   finished_at TIMESTAMP NULL,
+  INDEX idx_runs_tenant_created (tenant_id, created_at),
   INDEX idx_runs_root (root_run_id, created_at),
   INDEX idx_runs_conversation (conversation_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS agent_run_events (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id CHAR(26) NOT NULL,
   run_id VARCHAR(64) NOT NULL,
   event_type VARCHAR(50) NOT NULL,
   payload_json JSON NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_run_events_tenant (tenant_id, id),
   INDEX idx_run_events (run_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   // ---- Phase 3：工具 / 记忆 / 产物 ----
@@ -274,22 +300,67 @@ const SCHEMA_STATEMENTS = [
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS memories (
   id VARCHAR(64) PRIMARY KEY,
+  tenant_id CHAR(26) NOT NULL,
   agent_id VARCHAR(64) NOT NULL,
   kind ENUM('long_term','preference','task_context','summary') NOT NULL DEFAULT 'long_term',
   content MEDIUMTEXT NOT NULL,
   metadata_json JSON NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_memories_tenant_agent (tenant_id, agent_id, created_at),
   INDEX idx_memories_agent (agent_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS artifacts (
   id VARCHAR(64) PRIMARY KEY,
+  tenant_id CHAR(26) NOT NULL,
   run_id VARCHAR(64) NOT NULL,
   name VARCHAR(150) NOT NULL,
   mime_type VARCHAR(60) NOT NULL DEFAULT 'text/markdown',
   content LONGTEXT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_artifacts_tenant (tenant_id, created_at),
   INDEX idx_artifacts_run (run_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  // ---- 多租户：身份与租户基础模型（docs/MULTI_TENANCY_IMPLEMENTATION_SPEC.md §3）----
+  `CREATE TABLE IF NOT EXISTS tenants (
+  id CHAR(26) PRIMARY KEY,
+  slug VARCHAR(80) NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  status ENUM('active', 'suspended') NOT NULL DEFAULT 'active',
+  plan VARCHAR(30) NOT NULL DEFAULT 'free',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_tenants_slug (slug)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS users (
+  id CHAR(26) PRIMARY KEY,
+  email VARCHAR(255) NOT NULL,
+  display_name VARCHAR(120) NOT NULL,
+  password_hash VARCHAR(255) NULL,
+  status ENUM('active', 'disabled') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_users_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS tenant_members (
+  tenant_id CHAR(26) NOT NULL,
+  user_id CHAR(26) NOT NULL,
+  role ENUM('owner', 'admin', 'member', 'viewer') NOT NULL DEFAULT 'member',
+  status ENUM('active', 'invited', 'disabled') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (tenant_id, user_id),
+  INDEX idx_tenant_members_user (user_id, tenant_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS auth_sessions (
+  id CHAR(26) PRIMARY KEY,
+  user_id CHAR(26) NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_auth_sessions_token_hash (token_hash),
+  INDEX idx_auth_sessions_user (user_id, expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   // ---- 迁移记录表（幂等迁移，文档 §4.3）----
   `CREATE TABLE IF NOT EXISTS schema_migrations (

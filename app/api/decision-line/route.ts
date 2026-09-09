@@ -1,4 +1,5 @@
 import { ensureSchema, getPool, isDbConfigured } from '@/lib/db';
+import { requireLegacyTenantContext, requireRole } from '@/lib/auth/context';
 
 type DecisionNode = { employeeId: string; domain: string; keywords: string[] };
 type DecisionLine = { dispatcherId: string; nodes: DecisionNode[] };
@@ -29,12 +30,13 @@ const sanitize = (value: unknown): DecisionLine | null => {
   return { dispatcherId: parsed.dispatcherId, nodes };
 };
 
-/** GET /api/decision-line — 返回决策线配置（无记录时返回默认） */
-export async function GET() {
+/** GET /api/decision-line — 返回租户决策线配置（无记录时返回默认） */
+export async function GET(request: Request) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
     if (!isDbConfigured()) return Response.json({ decisionLine: null }, { status: 503 });
     await ensureSchema();
-    const rows = await getPool().query('SELECT config FROM decision_line WHERE id = 1') as Array<{ config: string }>;
+    const rows = await getPool().query('SELECT config FROM decision_line WHERE tenant_id = ? AND id = 1', [ctx.tenantId]) as Array<{ config: string }>;
     const decisionLine = sanitize(rows[0]?.config) ?? DEFAULT_DECISION_LINE;
     return Response.json({ decisionLine });
   } catch (error) {
@@ -42,17 +44,19 @@ export async function GET() {
   }
 }
 
-/** PUT /api/decision-line — 保存决策线配置 */
+/** PUT /api/decision-line — 保存租户决策线配置 */
 export async function PUT(request: Request) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
+    requireRole(ctx, 'owner', 'admin');
     const body = await request.json() as { decisionLine?: DecisionLine };
     const decisionLine = sanitize(body.decisionLine);
     if (!decisionLine) return Response.json({ error: '参数不正确：decisionLine 格式有误' }, { status: 400 });
     if (!isDbConfigured()) return Response.json({ error: '数据库未配置' }, { status: 503 });
     await ensureSchema();
     await getPool().query(
-      'INSERT INTO decision_line (id, config) VALUES (1, ?) ON DUPLICATE KEY UPDATE config = VALUES(config)',
-      [JSON.stringify(decisionLine)]
+      'INSERT INTO decision_line (tenant_id, id, config) VALUES (?, 1, ?) ON DUPLICATE KEY UPDATE config = VALUES(config)',
+      [ctx.tenantId, JSON.stringify(decisionLine)]
     );
     return Response.json({ ok: true });
   } catch (error) {

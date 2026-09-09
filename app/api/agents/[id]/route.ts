@@ -3,12 +3,14 @@
  * PATCH 使用乐观锁：请求携带 version，WHERE id=? AND version=?。
  */
 import { getAgentById, updateAgent } from '@/lib/repositories/agents';
+import { requirePlatformOps, requireSessionUser } from '@/lib/auth/context';
 import { ApiError, errorBody, newRequestId, validateAgentPayload } from '@/lib/agent/validators';
 import type { AgentRecord } from '@/lib/agent/types';
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const requestId = newRequestId();
   try {
+    await requireSessionUser(request);
     const { id } = await params;
     const agent = await getAgentById(id);
     if (!agent) throw new ApiError('agent_not_found', `Agent 不存在: ${id}`, 404);
@@ -22,6 +24,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const requestId = newRequestId();
   try {
+    await requirePlatformOps(request);
     const { id } = await params;
     const body = await request.json();
     const payload = validateAgentPayload(body, false);

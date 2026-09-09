@@ -23,6 +23,7 @@ export async function planTask(input: {
   maxDelegations?: number;
   /** 全局模型优先：指定后覆盖 companyAgent 的 modelProvider/modelName */
   model?: ModelProvider;
+  tenantId: string;
 }): Promise<PlanResult> {
   const maxDelegations = input.companyAgent.config.maxDelegations ?? 5;
   const system = buildPlannerSystemPrompt({
@@ -41,6 +42,7 @@ export async function planTask(input: {
       messages: [...history, { role: 'user', content: input.userMessage }],
       temperature: 0.3,
       maxTokens: 2000,
+      tenantId: input.tenantId,
     },
     validatePlan
   );

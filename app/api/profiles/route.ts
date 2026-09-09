@@ -1,4 +1,5 @@
 import { ensureSchema, getPool, isDbConfigured } from '@/lib/db';
+import { requirePlatformOps, requireSessionUser } from '@/lib/auth/context';
 
 type Skill = { name: string; description?: string; desc: string };
 type EmployeeProfile = { summary: string; traits: string[]; expertise: string; strengths: string[]; weaknesses: string[]; bestFor: string[]; skills: Skill[]; nationality?: string; age?: number | ''; keywords?: string[]; notGoodAt?: string[]; career?: string[] };
@@ -31,8 +32,9 @@ const parseSkills = (v: unknown): Skill[] => {
 };
 
 /** GET /api/profiles — 返回全部员工的特色档案（按员工 id 分组） */
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    await requireSessionUser(request);
     if (!isDbConfigured()) return Response.json({ profiles: null }, { status: 503 });
     await ensureSchema();
     const rows = await getPool().query(
@@ -61,9 +63,10 @@ export async function GET() {
   }
 }
 
-/** PUT /api/profiles — 批量新增或更新员工特色档案 */
+/** PUT /api/profiles — 批量新增或更新员工特色档案（仅平台运维） */
 export async function PUT(request: Request) {
   try {
+    await requirePlatformOps(request);
     const body = await request.json() as { profiles?: Record<string, EmployeeProfile> };
     const profiles = body.profiles && typeof body.profiles === 'object' ? body.profiles : null;
     if (!profiles) return Response.json({ error: '参数不正确：缺少 profiles' }, { status: 400 });
@@ -99,10 +102,10 @@ export async function PUT(request: Request) {
     return Response.json({ error: error instanceof Error ? error.message : '保存失败' }, { status: 500 });
   }
 }
-
-/** PATCH /api/profiles — 只新增或更新一个员工档案，避免覆盖其他员工。 */
+/** PATCH /api/profiles — 只新增或更新一个员工档案，避免覆盖其他员工（仅平台运维）。 */
 export async function PATCH(request: Request) {
   try {
+    await requirePlatformOps(request);
     const body = await request.json() as { employeeId?: string; profile?: EmployeeProfile };
     const employeeId = typeof body.employeeId === 'string' ? body.employeeId.trim() : '';
     const profile = body.profile;

@@ -11,27 +11,27 @@ export interface AddMemoryInput {
   metadata?: Record<string, unknown>;
 }
 
-export async function addMemory(input: AddMemoryInput): Promise<string> {
+export async function addMemory(tenantId: string, input: AddMemoryInput): Promise<string> {
   const id = `mem_${typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID().slice(0, 12) : Math.random().toString(36).slice(2, 14)}`;
   await ensureSchema();
   await getPool().query(
-    'INSERT INTO memories (id, agent_id, kind, content, metadata_json) VALUES (?, ?, ?, ?, ?)',
-    [id, input.agentId, input.kind, input.content, input.metadata ? JSON.stringify(input.metadata) : null]
+    'INSERT INTO memories (id, tenant_id, agent_id, kind, content, metadata_json) VALUES (?, ?, ?, ?, ?, ?)',
+    [id, tenantId, input.agentId, input.kind, input.content, input.metadata ? JSON.stringify(input.metadata) : null]
   );
   return id;
 }
 
-export async function listMemories(agentId: string, kind?: MemoryRecord['kind'], limit = 20): Promise<MemoryRecord[]> {
+export async function listMemories(tenantId: string, agentId: string, kind?: MemoryRecord['kind'], limit = 20): Promise<MemoryRecord[]> {
   if (!isDbConfigured()) return [];
   await ensureSchema();
   const rows = kind
     ? await getPool().query(
-        'SELECT id, agent_id, kind, content, metadata_json, created_at FROM memories WHERE agent_id = ? AND kind = ? ORDER BY created_at DESC LIMIT ?',
-        [agentId, kind, limit]
+        'SELECT id, agent_id, kind, content, metadata_json, created_at FROM memories WHERE tenant_id = ? AND agent_id = ? AND kind = ? ORDER BY created_at DESC LIMIT ?',
+        [tenantId, agentId, kind, limit]
       )
     : await getPool().query(
-        'SELECT id, agent_id, kind, content, metadata_json, created_at FROM memories WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?',
-        [agentId, limit]
+        'SELECT id, agent_id, kind, content, metadata_json, created_at FROM memories WHERE tenant_id = ? AND agent_id = ? ORDER BY created_at DESC LIMIT ?',
+        [tenantId, agentId, limit]
       );
   return (rows as Array<Record<string, unknown>>).map((r) => ({
     id: String(r.id),
@@ -43,7 +43,7 @@ export async function listMemories(agentId: string, kind?: MemoryRecord['kind'],
   }));
 }
 
-export async function deleteMemory(id: string): Promise<void> {
+export async function deleteMemory(tenantId: string, id: string): Promise<void> {
   await ensureSchema();
-  await getPool().query('DELETE FROM memories WHERE id = ?', [id]);
+  await getPool().query('DELETE FROM memories WHERE id = ? AND tenant_id = ?', [id, tenantId]);
 }

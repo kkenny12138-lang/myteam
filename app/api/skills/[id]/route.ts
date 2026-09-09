@@ -3,12 +3,14 @@
  * PATCH 使用乐观锁：WHERE id=? AND version=?。
  */
 import { getSkillById, updateSkill } from '@/lib/repositories/skills';
+import { requirePlatformOps, requireSessionUser } from '@/lib/auth/context';
 import { ApiError, errorBody, newRequestId, validateSkillPayload } from '@/lib/agent/validators';
 import type { SkillRecord } from '@/lib/agent/types';
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const requestId = newRequestId();
   try {
+    await requireSessionUser(request);
     const { id } = await params;
     const skill = await getSkillById(id);
     if (!skill) throw new ApiError('skill_not_found', `Skill 不存在: ${id}`, 404);
@@ -22,6 +24,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const requestId = newRequestId();
   try {
+    await requirePlatformOps(request);
     const { id } = await params;
     const body = await request.json();
     const payload = validateSkillPayload(body, false);

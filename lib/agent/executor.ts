@@ -12,6 +12,7 @@ import { appendRunEvent, createRun, finishRun } from '@/lib/repositories/runs';
 import { ApiError, assertAgentRunnable, newRunId, requireAvailableSkill } from '@/lib/agent/validators';
 
 export interface ExecuteInput {
+  tenantId: string;
   runId?: string;
   agentId: string;
   conversationId: string;
@@ -42,8 +43,9 @@ export async function executeSingle(input: ExecuteInput): Promise<ExecuteResult>
   const runId = input.runId ?? newRunId();
   const start = Date.now();
   const rootRunId = input.rootRunId ?? runId;
+  const tenantId = input.tenantId;
 
-  await ensureRunRecord(runId, {
+  await ensureRunRecord(tenantId, runId, {
     parentRunId: input.parentRunId ?? null,
     rootRunId,
     conversationId: input.conversationId,
@@ -52,14 +54,14 @@ export async function executeSingle(input: ExecuteInput): Promise<ExecuteResult>
     inputText: input.inputText,
   });
 
-  await appendRunEvent(runId, 'running', { agentId: input.agentId });
+  await appendRunEvent(tenantId, runId, 'running', { agentId: input.agentId });
   try {
-    const ctx = await loadAgentContext(input.agentId, { skillId: input.skillId });
+    const ctx = await loadAgentContext(input.agentId, { skillId: input.skillId, tenantId });
     if (!ctx) throw new ApiError('agent_not_found', `Agent 不存在: ${input.agentId}`, 404);
     assertAgentRunnable(ctx.agent.status, input.preview);
     if (input.skillId) {
       requireAvailableSkill(ctx.skills[0], input.skillId);
-      await appendRunEvent(runId, 'skill_selected', { skillId: input.skillId, name: ctx.skills[0]?.name });
+      await appendRunEvent(tenantId, runId, 'skill_selected', { skillId: input.skillId, name: ctx.skills[0]?.name });
     }
 
     const system = buildSystemPrompt({
@@ -89,13 +91,14 @@ export async function executeSingle(input: ExecuteInput): Promise<ExecuteResult>
             messages: [...history, { role: 'user', content: input.inputText }],
             temperature: ctx.agent.config.temperature ?? 0.6,
             maxTokens,
+            tenantId,
           },
           { signal: AbortSignal.timeout(timeoutMs) }
         );
         break;
       } catch (error) {
         if (attempt === 0 && isRetryableError(error)) {
-          await appendRunEvent(runId, 'retry', { reason: error instanceof Error ? error.message : String(error) });
+          await appendRunEvent(tenantId, runId, 'retry', { reason: error instanceof Error ? error.message : String(error) });
           continue;
         }
         throw error;
@@ -104,12 +107,12 @@ export async function executeSingle(input: ExecuteInput): Promise<ExecuteResult>
     if (!result) throw new FatalError('模型调用未返回结果');
 
     const latencyMs = Date.now() - start;
-    await appendRunEvent(runId, 'token', {
+    await appendRunEvent(tenantId, runId, 'token', {
       promptTokens: result.usage.promptTokens,
       completionTokens: result.usage.completionTokens,
       totalTokens: result.usage.totalTokens,
     });
-    await finishRun(runId, {
+    await finishRun(tenantId, runId, {
       status: 'succeeded',
       outputText: result.text,
       modelName: modelName,
@@ -117,22 +120,23 @@ export async function executeSingle(input: ExecuteInput): Promise<ExecuteResult>
       completionTokens: result.usage.completionTokens,
       latencyMs,
     });
-    await appendRunEvent(runId, 'completed', { latencyMs });
+    await appendRunEvent(tenantId, runId, 'completed', { latencyMs });
     return { runId, agentId: input.agentId, text: result.text, usage: result.usage, modelName, latencyMs };
   } catch (error) {
     const latencyMs = Date.now() - start;
     const message = error instanceof Error ? error.message : String(error);
-    await finishRun(runId, { status: 'failed', errorText: message, latencyMs });
-    await appendRunEvent(runId, 'failed', { error: message });
+    await finishRun(tenantId, runId, { status: 'failed', errorText: message, latencyMs });
+    await appendRunEvent(tenantId, runId, 'failed', { error: message });
     throw error;
   }
 }
 
 async function ensureRunRecord(
+  tenantId: string,
   runId: string,
   data: Pick<AgentRun, 'parentRunId' | 'rootRunId' | 'conversationId' | 'agentId' | 'skillId' | 'inputText'>
 ): Promise<void> {
-  await createRun({
+  await createRun(tenantId, {
     id: runId,
     parentRunId: data.parentRunId,
     rootRunId: data.rootRunId,

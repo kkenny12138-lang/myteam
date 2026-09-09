@@ -1,5 +1,6 @@
 import { ensureSchema, getPool, isDbConfigured } from '@/lib/db';
 import { clearMessageAttachments, linkMessageAttachment, listAttachmentsForMessages } from '@/lib/repositories/attachments';
+import { requireLegacyTenantContext } from '@/lib/auth/context';
 import type { AttachmentRecord, AttachmentRef } from '@/lib/agent/types';
 
 type Message = { id: string; sender: 'me' | 'employee'; text: string; time: string; tokens?: number; attachments?: AttachmentRef[] };
@@ -17,12 +18,14 @@ function toRef(a: AttachmentRecord): AttachmentRef {
 }
 
 /** GET /api/messages — 返回全部聊天记录（按员工分组，含附件） */
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
     if (!isDbConfigured()) return Response.json({ messages: null }, { status: 503 });
     await ensureSchema();
     const rows = await getPool().query(
-      'SELECT id, employee_id, sender, text, time, tokens FROM messages ORDER BY employee_id ASC, created_at ASC, id ASC'
+      'SELECT id, employee_id, sender, text, time, tokens FROM messages WHERE tenant_id = ? ORDER BY employee_id ASC, created_at ASC, id ASC',
+      [ctx.tenantId]
     ) as Array<Record<string, unknown>>;
     const messages: MessageMap = {};
     const ids: string[] = [];
@@ -40,7 +43,7 @@ export async function GET() {
       });
     }
     // 批量取附件并挂到对应消息
-    const attMap = await listAttachmentsForMessages('single', ids);
+    const attMap = await listAttachmentsForMessages(ctx.tenantId, 'single', ids);
     for (const list of Object.values(messages)) {
       for (const m of list) {
         const atts = attMap[m.id];
@@ -56,6 +59,7 @@ export async function GET() {
 /** PUT /api/messages — 整体替换聊天记录 */
 export async function PUT(request: Request) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
     const body = await request.json() as { messages?: MessageMap };
     const messages = body.messages && typeof body.messages === 'object' ? body.messages : null;
     if (!messages) return Response.json({ error: '参数不正确：缺少 messages' }, { status: 400 });
@@ -67,7 +71,7 @@ export async function PUT(request: Request) {
     const relations: Array<[string, string, number]> = [];
     try {
       await connection.beginTransaction();
-      await connection.query('DELETE FROM messages');
+      await connection.query('DELETE FROM messages WHERE tenant_id = ?', [ctx.tenantId]);
       for (const [employeeId, list] of Object.entries(messages)) {
         for (const m of list) {
           if (!m?.id) continue;
@@ -78,7 +82,7 @@ export async function PUT(request: Request) {
         }
       }
       if (values.length) {
-        await connection.batch('INSERT INTO messages (id, employee_id, sender, text, time, tokens) VALUES (?, ?, ?, ?, ?, ?)', values);
+        await connection.batch('INSERT INTO messages (id, tenant_id, employee_id, sender, text, time, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)', values.map((v) => [v[0], ctx.tenantId, v[1], v[2], v[3], v[4], v[5]]));
       }
       await connection.commit();
     } catch (err) {
@@ -89,9 +93,9 @@ export async function PUT(request: Request) {
     }
     // 事务提交后再写附件关联（保证消息先存在）
     try {
-      await clearMessageAttachments('single');
+      await clearMessageAttachments(ctx.tenantId, 'single');
       for (const [messageId, attachmentId, sortOrder] of relations) {
-        await linkMessageAttachment('single', messageId, attachmentId, sortOrder);
+        await linkMessageAttachment(ctx.tenantId, 'single', messageId, attachmentId, sortOrder);
       }
     } catch {
       // 关联写入失败不阻断消息保存
@@ -105,11 +109,12 @@ export async function PUT(request: Request) {
 /** DELETE /api/messages?employee=xxx — 清空某个员工（单聊）的聊天记录 */
 export async function DELETE(request: Request) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
     const employee = new URL(request.url).searchParams.get('employee');
     if (!employee) return Response.json({ error: '参数不正确：缺少 employee' }, { status: 400 });
     if (!isDbConfigured()) return Response.json({ error: '数据库未配置' }, { status: 503 });
     await ensureSchema();
-    await getPool().query('DELETE FROM messages WHERE employee_id = ?', [employee]);
+    await getPool().query('DELETE FROM messages WHERE tenant_id = ? AND employee_id = ?', [ctx.tenantId, employee]);
     return Response.json({ ok: true });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : '删除失败' }, { status: 500 });

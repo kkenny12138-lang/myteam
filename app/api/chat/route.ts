@@ -16,6 +16,7 @@ import { getAttachmentBytes, getAttachments, updateExtractedText } from '@/lib/r
 import { defaultModel, generate, modelCapabilities } from '@/lib/models/gateway';
 import { extractKimiFile } from '@/lib/models/kimi';
 import { ensureSchema, getPool, isDbConfigured } from '@/lib/db';
+import { requireLegacyTenantContext, requireRole } from '@/lib/auth/context';
 import type { AttachmentRecord, ChatMessage, MessageContentPart, ModelProvider } from '@/lib/agent/types';
 
 type IncomingMessage = { sender: 'me' | 'employee'; text: string };
@@ -34,6 +35,8 @@ type ChatRequest = {
 
 export async function POST(request: Request) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
+    requireRole(ctx, 'owner', 'admin', 'member');
     const body = await request.json() as ChatRequest;
     if (!body.messages || !Array.isArray(body.messages) || !(body.model === 'kimi' || body.model === 'deepseek' || body.model === 'openai')) {
       return Response.json({ error: '请求格式不正确' }, { status: 400 });
@@ -67,7 +70,7 @@ export async function POST(request: Request) {
         agent = await getAgentByEmployeeId(employeeId);
         if (agent) {
           skills = (await listAgentSkills(agent.id)).filter((s) => s.status === 'published');
-          memories = await listMemories(agent.id, undefined, 10);
+          memories = await listMemories(ctx.tenantId, agent.id, undefined, 10);
         }
       }
     }
@@ -83,7 +86,7 @@ export async function POST(request: Request) {
       : [];
     const ownerType: 'single' | 'group' = body.groupId ? 'group' : 'single';
     const ownerId = body.groupId || employeeId || '';
-    const attachments: AttachmentRecord[] = await loadAndValidateAttachments(attachmentIds, ownerType, ownerId);
+    const attachments: AttachmentRecord[] = await loadAndValidateAttachments(ctx.tenantId, attachmentIds, ownerType, ownerId);
 
     // ---- 组装 system prompt（Prompt Builder 固定顺序） ----
     let extra = '';
@@ -140,7 +143,7 @@ export async function POST(request: Request) {
 
     const mode: AnswerMode = body.mode === 'deep' ? 'deep' : 'fast';
     // 全局领先：模型名一律按用户所选供应商解析，忽略 Agent 自身的 modelProvider/modelName。
-    const messages = await buildMessagesWithAttachments(history, attachments, caps, provider);
+    const messages = await buildMessagesWithAttachments(ctx.tenantId, history, attachments, caps, provider);
     const result = await generate({
       provider,
       model: modelName,
@@ -148,6 +151,7 @@ export async function POST(request: Request) {
       messages,
       temperature: agent?.config?.temperature ?? 0.6,
       maxTokens: mode === 'deep' ? 6000 : 1600,
+      tenantId: ctx.tenantId,
     });
 
     return Response.json({ text: result.text, provider: body.model, model: result.modelName, usage: result.usage });
@@ -158,13 +162,14 @@ export async function POST(request: Request) {
 
 /** 校验附件归属与状态（文档 §7.4 处理顺序 1-3） */
 async function loadAndValidateAttachments(
+  tenantId: string,
   ids: string[],
   ownerType: 'single' | 'group',
   ownerId: string
 ): Promise<AttachmentRecord[]> {
   if (!ids.length) return [];
   if (!ownerId) throw new Error('无法确定附件归属会话');
-  const attachments = await getAttachments(ids);
+  const attachments = await getAttachments(tenantId, ids);
   const byId = new Map(attachments.map((a) => [a.id, a]));
   const result: AttachmentRecord[] = [];
   for (const id of ids) {
@@ -179,6 +184,7 @@ async function loadAndValidateAttachments(
 
 /** 把附件内容并入最后一条用户消息（文档 §7.4 处理顺序 4-5） */
 async function buildMessagesWithAttachments(
+  tenantId: string,
   history: ChatMessage[],
   attachments: AttachmentRecord[],
   caps: ReturnType<typeof modelCapabilities>,
@@ -196,7 +202,7 @@ async function buildMessagesWithAttachments(
   for (const att of attachments) {
     if (att.category === 'image') {
       if (caps.imageInput) {
-        const file = await getAttachmentBytes(att.id);
+        const file = await getAttachmentBytes(tenantId, att.id);
         if (file && file.bytes.length <= 8 * 1024 * 1024) {
           parts.push({ type: 'image', attachmentId: att.id, mimeType: att.mimeType, url: bytesToDataUrl(att.mimeType, file.bytes) });
         } else if (file) {
@@ -211,13 +217,13 @@ async function buildMessagesWithAttachments(
       let text = (att.extractedText || '').trim();
       // 本地未抽取到文本时，Kimi 走官方 Files API（file-extract）补抽取
       if (!text && provider === 'kimi') {
-        const file = await getAttachmentBytes(att.id);
+        const file = await getAttachmentBytes(tenantId, att.id);
         if (file) {
           const extracted = await extractKimiFile(file.bytes, att.originalName, att.mimeType);
           if (extracted) {
             text = extracted;
             try {
-              await updateExtractedText(att.id, extracted.slice(0, 60000), { parseable: true, kind: att.category, source: 'kimi-files' });
+              await updateExtractedText(tenantId, att.id, extracted.slice(0, 60000), { parseable: true, kind: att.category, source: 'kimi-files' });
             } catch {
               // 回写失败不影响本次分析
             }

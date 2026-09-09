@@ -19,6 +19,8 @@ export interface GenerateParams {
   maxTokens?: number;
   /** 期望 JSON 输出（generateObject 内部使用） */
   json?: boolean;
+  /** 租户隔离：模型配置按 tenant_id 读取（无则回退环境变量） */
+  tenantId?: string;
 }
 
 /** 可重试的错误标记（超时、限流、5xx） */

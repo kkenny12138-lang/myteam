@@ -4,12 +4,14 @@
  */
 import { isDbConfigured } from '@/lib/db';
 import { deleteAttachment, getAttachment } from '@/lib/repositories/attachments';
+import { requireLegacyTenantContext } from '@/lib/auth/context';
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
     if (!isDbConfigured()) return Response.json({ error: '数据库未配置' }, { status: 503 });
     const { id } = await params;
-    const attachment = await getAttachment(id);
+    const attachment = await getAttachment(ctx.tenantId, id);
     if (!attachment || attachment.status === 'deleted') {
       return Response.json({ error: '附件不存在' }, { status: 404 });
     }
@@ -33,13 +35,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 }
 
-export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
     if (!isDbConfigured()) return Response.json({ error: '数据库未配置' }, { status: 503 });
     const { id } = await params;
-    const attachment = await getAttachment(id);
+    const attachment = await getAttachment(ctx.tenantId, id);
     if (!attachment) return Response.json({ error: '附件不存在' }, { status: 404 });
-    const removed = await deleteAttachment(id);
+    const removed = await deleteAttachment(ctx.tenantId, id);
     return Response.json({ ok: true, removed });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : '删除失败' }, { status: 500 });

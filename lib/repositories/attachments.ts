@@ -48,13 +48,14 @@ export interface CreateAttachmentInput {
   data: Uint8Array | null;
 }
 
-export async function createAttachment(input: CreateAttachmentInput): Promise<void> {
+export async function createAttachment(tenantId: string, input: CreateAttachmentInput): Promise<void> {
   await ensureSchema();
   await getPool().query(
-    `INSERT INTO attachments (id, owner_type, owner_id, original_name, mime_type, size_bytes, category, status, data, extracted_text, extraction_meta, error_message)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+    `INSERT INTO attachments (id, tenant_id, owner_type, owner_id, original_name, mime_type, size_bytes, category, status, data, extracted_text, extraction_meta, error_message)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
     [
       input.id,
+      tenantId,
       input.ownerType,
       input.ownerId,
       input.originalName,
@@ -69,63 +70,65 @@ export async function createAttachment(input: CreateAttachmentInput): Promise<vo
   );
 }
 
-export async function getAttachment(id: string): Promise<AttachmentRecord | null> {
+export async function getAttachment(tenantId: string, id: string): Promise<AttachmentRecord | null> {
   if (!isDbConfigured()) return null;
   await ensureSchema();
   const rows = await getPool().query(
-    'SELECT id, owner_type, owner_id, original_name, mime_type, size_bytes, category, status, extracted_text, extraction_meta, error_message, created_at FROM attachments WHERE id = ? LIMIT 1',
-    [id]
+    'SELECT id, owner_type, owner_id, original_name, mime_type, size_bytes, category, status, extracted_text, extraction_meta, error_message, created_at FROM attachments WHERE id = ? AND tenant_id = ? LIMIT 1',
+    [id, tenantId]
   ) as Array<Record<string, unknown>>;
   const row = rows[0];
   return row ? mapRow(row) : null;
 }
 
-export async function getAttachments(ids: string[]): Promise<AttachmentRecord[]> {
+export async function getAttachments(tenantId: string, ids: string[]): Promise<AttachmentRecord[]> {
   if (!isDbConfigured() || !ids.length) return [];
   await ensureSchema();
   const placeholders = ids.map(() => '?').join(',');
   const rows = await getPool().query(
     `SELECT id, owner_type, owner_id, original_name, mime_type, size_bytes, category, status, extracted_text, extraction_meta, error_message, created_at
-     FROM attachments WHERE id IN (${placeholders})`,
-    ids
+     FROM attachments WHERE tenant_id = ? AND id IN (${placeholders})`,
+    [tenantId, ...ids]
   ) as Array<Record<string, unknown>>;
   return rows.map(mapRow);
 }
 
-export async function getAttachmentBytes(id: string): Promise<{ mimeType: string; bytes: Uint8Array } | null> {
+export async function getAttachmentBytes(tenantId: string, id: string): Promise<{ mimeType: string; bytes: Uint8Array } | null> {
   if (!isDbConfigured()) return null;
   await ensureSchema();
   const rows = await getPool().query(
-    'SELECT mime_type, data FROM attachments WHERE id = ? AND status <> ? LIMIT 1',
-    [id, 'deleted']
+    'SELECT mime_type, data FROM attachments WHERE id = ? AND tenant_id = ? AND status <> ? LIMIT 1',
+    [id, tenantId, 'deleted']
   ) as Array<{ mime_type: string; data: Buffer | null }>;
   const row = rows[0];
   if (!row || !row.data) return null;
   return { mimeType: String(row.mime_type || 'application/octet-stream'), bytes: new Uint8Array(row.data) };
 }
 
-export async function deleteAttachment(id: string): Promise<boolean> {
+export async function deleteAttachment(tenantId: string, id: string): Promise<boolean> {
   if (!isDbConfigured()) return false;
   await ensureSchema();
-  await getPool().query('DELETE FROM message_attachments WHERE attachment_id = ?', [id]);
-  const result = await getPool().query('DELETE FROM attachments WHERE id = ?', [id]);
+  await getPool().query('DELETE FROM message_attachments WHERE attachment_id = ? AND tenant_id = ?', [id, tenantId]);
+  const result = await getPool().query('DELETE FROM attachments WHERE id = ? AND tenant_id = ?', [id, tenantId]);
   return (result as { affectedRows?: number }).affectedRows ? true : false;
 }
 
 /** 回写抽取结果（例如 Kimi Files API 抽取成功后的缓存） */
 export async function updateExtractedText(
+  tenantId: string,
   id: string,
   extractedText: string,
   meta: Record<string, unknown>
 ): Promise<void> {
   await ensureSchema();
   await getPool().query(
-    'UPDATE attachments SET extracted_text = ?, extraction_meta = ?, status = ? WHERE id = ?',
-    [extractedText, JSON.stringify(meta), 'ready', id]
+    'UPDATE attachments SET extracted_text = ?, extraction_meta = ?, status = ? WHERE id = ? AND tenant_id = ?',
+    [extractedText, JSON.stringify(meta), 'ready', id, tenantId]
   );
 }
 
 export async function linkMessageAttachment(
+  tenantId: string,
   messageType: 'single' | 'group',
   messageId: string,
   attachmentId: string,
@@ -133,18 +136,19 @@ export async function linkMessageAttachment(
 ): Promise<void> {
   await ensureSchema();
   await getPool().query(
-    'INSERT INTO message_attachments (message_type, message_id, attachment_id, sort_order) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE sort_order = VALUES(sort_order)',
-    [messageType, messageId, attachmentId, sortOrder]
+    'INSERT INTO message_attachments (tenant_id, message_type, message_id, attachment_id, sort_order) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE sort_order = VALUES(sort_order)',
+    [tenantId, messageType, messageId, attachmentId, sortOrder]
   );
 }
 
-export async function clearMessageAttachments(messageType: 'single' | 'group'): Promise<void> {
+export async function clearMessageAttachments(tenantId: string, messageType: 'single' | 'group'): Promise<void> {
   await ensureSchema();
-  await getPool().query('DELETE FROM message_attachments WHERE message_type = ?', [messageType]);
+  await getPool().query('DELETE FROM message_attachments WHERE message_type = ? AND tenant_id = ?', [messageType, tenantId]);
 }
 
 /** 按消息批量取附件（不返回二进制），返回 messageId -> 附件列表 */
 export async function listAttachmentsForMessages(
+  tenantId: string,
   messageType: 'single' | 'group',
   messageIds: string[]
 ): Promise<Record<string, AttachmentRecord[]>> {
@@ -157,9 +161,9 @@ export async function listAttachmentsForMessages(
             a.extracted_text, a.extraction_meta, a.error_message, a.created_at, ma.message_id, ma.sort_order
      FROM attachments a
      JOIN message_attachments ma ON ma.attachment_id = a.id
-     WHERE ma.message_type = ? AND ma.message_id IN (${placeholders})
+     WHERE ma.tenant_id = ? AND a.tenant_id = ? AND ma.message_type = ? AND ma.message_id IN (${placeholders})
      ORDER BY ma.sort_order ASC, a.created_at ASC`,
-    [messageType, ...messageIds]
+    [tenantId, tenantId, messageType, ...messageIds]
   ) as Array<Record<string, unknown>>;
   for (const row of rows) {
     const messageId = String(row.message_id);

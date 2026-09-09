@@ -2,12 +2,14 @@
  * GET/POST /api/skills — Skill 列表 / 创建（docs §6 / §8）。
  */
 import { createSkill, listSkills } from '@/lib/repositories/skills';
+import { requirePlatformOps, requireSessionUser } from '@/lib/auth/context';
 import { ApiError, errorBody, newRequestId, newSkillId, validateSkillPayload } from '@/lib/agent/validators';
 import type { SkillRecord } from '@/lib/agent/types';
 
 export async function GET(request: Request) {
   const requestId = newRequestId();
   try {
+    await requireSessionUser(request);
     const url = new URL(request.url);
     const status = url.searchParams.get('status') as SkillRecord['status'] | null;
     const skills = status && ['draft', 'published', 'disabled'].includes(status) ? await listSkills(status) : await listSkills();
@@ -20,6 +22,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const requestId = newRequestId();
   try {
+    await requirePlatformOps(request);
     const body = await request.json();
     const payload = validateSkillPayload(body, true);
     const skill: SkillRecord = {

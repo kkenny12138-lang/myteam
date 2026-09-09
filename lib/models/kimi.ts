@@ -18,6 +18,7 @@ interface GenerateParamsLike {
   maxTokens?: number;
   json?: boolean;
   signal?: AbortSignal;
+  tenantId?: string;
 }
 
 /** 把统一内容块转成 Kimi 的 OpenAI 兼容格式（图片 → image_url，文档 → 文本） */
@@ -31,7 +32,7 @@ function toProviderContent(content: string | MessageContentPart[]) {
 }
 
 export async function generateKimi(params: GenerateParamsLike): Promise<GenerateResult> {
-  const runtimeConfig = await getRuntimeModelConfig('kimi');
+  const runtimeConfig = await getRuntimeModelConfig(params.tenantId, 'kimi');
   if (!runtimeConfig.enabled) throw new FatalError('Kimi 已在模型配置表中停用');
   const apiKey = runtimeConfig.apiKey;
   if (!apiKey) throw new FatalError('本地尚未配置 KIMI_API_KEY');
@@ -110,7 +111,7 @@ export async function extractKimiFile(
   filename: string,
   mimeType: string
 ): Promise<string | null> {
-  const apiKey = (await getRuntimeModelConfig('kimi')).apiKey;
+  const apiKey = (await getRuntimeModelConfig(undefined, 'kimi')).apiKey;
   if (!apiKey) return null;
   try {
     const form = new FormData();

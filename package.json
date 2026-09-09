@@ -12,7 +12,8 @@
     "test": "vitest run",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "migrate:conversations": "node --env-file-if-exists=.env scripts/migrations/migrate-conversations.mjs",
-    "migrate:conversations:rollback": "node --env-file-if-exists=.env scripts/migrations/rollback-conversations.mjs"
+    "migrate:conversations:rollback": "node --env-file-if-exists=.env scripts/migrations/rollback-conversations.mjs",
+    "migrate:multitenancy": "node --env-file-if-exists=.env scripts/migrations/migrate-multitenancy.mjs"
   },
   "dependencies": {
     "mariadb": "^3.5.3",

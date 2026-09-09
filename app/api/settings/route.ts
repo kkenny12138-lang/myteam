@@ -1,4 +1,5 @@
 import { ensureSchema, getPool, isDbConfigured } from '@/lib/db';
+import { requireLegacyTenantContext, requireRole } from '@/lib/auth/context';
 
 const KEY_MODEL = 'chatModel';
 const KEY_MODE = 'answerMode';
@@ -12,12 +13,13 @@ type SettingsBody = {
   employeeModels?: Record<string, 'kimi' | 'deepseek' | 'openai'>;
 };
 
-/** GET /api/settings — 返回全局设置（对话模型 / 回答模式 / 上下文起始点） */
-export async function GET() {
+/** GET /api/settings — 返回租户设置（对话模型 / 回答模式 / 上下文起始点） */
+export async function GET(request: Request) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
     if (!isDbConfigured()) return Response.json({ settings: null }, { status: 503 });
     await ensureSchema();
-    const rows = await getPool().query('SELECT k, v FROM settings') as Array<{ k: string; v: string }>;
+    const rows = await getPool().query('SELECT k, v FROM settings WHERE tenant_id = ?', [ctx.tenantId]) as Array<{ k: string; v: string }>;
     const map = Object.fromEntries(rows.map((r) => [r.k, r.v]));
     let contextStarts: Record<string, number> | null = null;
     if (map[KEY_STARTS]) {
@@ -58,6 +60,8 @@ export async function GET() {
 /** PUT /api/settings — 部分更新设置（只更新传入的字段） */
 export async function PUT(request: Request) {
   try {
+    const ctx = await requireLegacyTenantContext(request);
+    requireRole(ctx, 'owner', 'admin');
     const body = await request.json() as SettingsBody;
     if (body.chatModel === undefined && body.answerMode === undefined && body.contextStarts === undefined && body.employeeModels === undefined) {
       return Response.json({ error: '参数不正确：没有可更新的字段' }, { status: 400 });
@@ -69,7 +73,7 @@ export async function PUT(request: Request) {
     try {
       await connection.beginTransaction();
       const upsert = async (key: string, value: string) => {
-        await connection.query('INSERT INTO settings (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)', [key, value]);
+        await connection.query('INSERT INTO settings (tenant_id, k, v) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)', [ctx.tenantId, key, value]);
       };
       if (body.chatModel !== undefined) await upsert(KEY_MODEL, body.chatModel);
       if (body.answerMode !== undefined) await upsert(KEY_MODE, body.answerMode);

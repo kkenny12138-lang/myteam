@@ -18,6 +18,7 @@ interface GenerateParamsLike {
   maxTokens?: number;
   json?: boolean;
   signal?: AbortSignal;
+  tenantId?: string;
 }
 
 /** 把统一内容块转成 DeepSeek 的 OpenAI 兼容格式（图片 → image_url，文档 → 文本） */
@@ -31,7 +32,7 @@ function toProviderContent(content: string | MessageContentPart[]) {
 }
 
 export async function generateDeepSeek(params: GenerateParamsLike): Promise<GenerateResult> {
-  const runtimeConfig = await getRuntimeModelConfig('deepseek');
+  const runtimeConfig = await getRuntimeModelConfig(params.tenantId, 'deepseek');
   if (!runtimeConfig.enabled) throw new FatalError('DeepSeek 已在模型配置表中停用');
   const apiKey = runtimeConfig.apiKey;
   if (!apiKey) throw new FatalError('本地尚未配置 DEEPSEEK_API_KEY');

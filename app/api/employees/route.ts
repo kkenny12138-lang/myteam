@@ -1,11 +1,18 @@
 import { ensureSchema, getPool, isDbConfigured } from '@/lib/db';
 import { buildEmployeeAgent } from '@/lib/agent/employee-agent';
+import { requirePlatformOps, requireSessionUser } from '@/lib/auth/context';
+import { ApiError } from '@/lib/agent/validators';
 
 type Employee = { id: string; name: string; role: string; department: string; initials: string; color: string; online: boolean };
 
-/** GET /api/employees — 返回全部员工（按排序） */
-export async function GET() {
+function statusOf(error: unknown): number {
+  return error instanceof ApiError ? error.status : 500;
+}
+
+/** GET /api/employees — 返回全部员工（按排序），需有效租户会话 */
+export async function GET(request: Request) {
   try {
+    await requireSessionUser(request);
     if (!isDbConfigured()) return Response.json({ employees: null }, { status: 503 });
     await ensureSchema();
     const rows = await getPool().query(
@@ -22,13 +29,14 @@ export async function GET() {
     }));
     return Response.json({ employees });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : '数据库访问失败' }, { status: 500 });
+    return Response.json({ error: error instanceof Error ? error.message : '数据库访问失败' }, { status: statusOf(error) });
   }
 }
 
-/** PUT /api/employees — 整体替换员工列表 */
+/** PUT /api/employees — 整体替换员工列表（仅平台运维） */
 export async function PUT(request: Request) {
   try {
+    await requirePlatformOps(request);
     const body = await request.json() as { employees?: Employee[] };
     const employees = Array.isArray(body.employees) ? body.employees : null;
     if (!employees) return Response.json({ error: '参数不正确：缺少 employees' }, { status: 400 });
@@ -56,13 +64,14 @@ export async function PUT(request: Request) {
     }
     return Response.json({ ok: true, count: employees.length });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : '保存失败' }, { status: 500 });
+    return Response.json({ error: error instanceof Error ? error.message : '保存失败' }, { status: statusOf(error) });
   }
 }
 
-/** POST /api/employees — 新增一名员工。 */
+/** POST /api/employees — 新增一名员工（仅平台运维）。 */
 export async function POST(request: Request) {
   try {
+    await requirePlatformOps(request);
     const body = await request.json() as { employee?: Employee };
     const employee = body.employee;
     if (!employee?.id?.trim() || !employee.name?.trim() || !employee.department?.trim()) {
@@ -104,13 +113,14 @@ export async function POST(request: Request) {
     }
     return Response.json({ employee }, { status: 201 });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : '新增员工失败' }, { status: 500 });
+    return Response.json({ error: error instanceof Error ? error.message : '新增员工失败' }, { status: statusOf(error) });
   }
 }
 
-/** PATCH /api/employees — 调整员工所属部门。 */
+/** PATCH /api/employees — 调整员工所属部门（仅平台运维）。 */
 export async function PATCH(request: Request) {
   try {
+    await requirePlatformOps(request);
     const body = await request.json() as { employeeId?: string; department?: string };
     const employeeId = body.employeeId?.trim() || '';
     const department = body.department?.trim() || '';
@@ -120,7 +130,7 @@ export async function PATCH(request: Request) {
     const result = await getPool().query('UPDATE employees SET department = ? WHERE id = ?', [department, employeeId]);
     if (!result.affectedRows) return Response.json({ error: '员工不存在' }, { status: 404 });
     return Response.json({ ok: true });
-  } catch (error) {
+  } catch (error) {statusOf(error)
     return Response.json({ error: error instanceof Error ? error.message : '调整部门失败' }, { status: 500 });
   }
 }

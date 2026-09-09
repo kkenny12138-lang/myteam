@@ -88,7 +88,7 @@ function newId(prefix: string): string {
   return `${prefix}_${rnd}`;
 }
 
-export async function createConversation(input: {
+export async function createConversation(tenantId: string, input: {
   type: ConversationType;
   employeeId?: string | null;
   groupId?: string | null;
@@ -102,44 +102,44 @@ export async function createConversation(input: {
 
   const id = newId('c');
   await getPool().query(
-    'INSERT INTO conversations (id, type, employee_id, group_id, title, version) VALUES (?, ?, ?, ?, ?, 1)',
-    [id, input.type, input.employeeId ?? null, input.groupId ?? null, input.title || '']
+    'INSERT INTO conversations (id, tenant_id, type, employee_id, group_id, title, version) VALUES (?, ?, ?, ?, ?, ?, 1)',
+    [id, tenantId, input.type, input.employeeId ?? null, input.groupId ?? null, input.title || '']
   );
-  return (await getConversation(id))!;
+  return (await getConversation(tenantId, id))!;
 }
 
-export async function getConversation(id: string): Promise<ConversationRecord | null> {
+export async function getConversation(tenantId: string, id: string): Promise<ConversationRecord | null> {
   if (!isDbConfigured()) return null;
   await ensureSchema();
   const rows = await getPool().query(
-    'SELECT id, type, employee_id, group_id, title, version, created_at, updated_at FROM conversations WHERE id = ? LIMIT 1',
-    [id]
+    'SELECT id, type, employee_id, group_id, title, version, created_at, updated_at FROM conversations WHERE id = ? AND tenant_id = ? LIMIT 1',
+    [id, tenantId]
   ) as Array<Record<string, unknown>>;
   return rows[0] ? mapConversation(rows[0]) : null;
 }
 
-/** 按归属查默认会话（用于旧数据映射后查找） */
-export async function getConversationByOwner(type: ConversationType, ownerId: string): Promise<ConversationRecord | null> {
+/** 按归属查默认会话（用于旧数据映射后查找），租户内查询 */
+export async function getConversationByOwner(tenantId: string, type: ConversationType, ownerId: string): Promise<ConversationRecord | null> {
   if (!isDbConfigured()) return null;
   await ensureSchema();
   const col = type === 'single' ? 'employee_id' : 'group_id';
   const rows = await getPool().query(
-    `SELECT id, type, employee_id, group_id, title, version, created_at, updated_at FROM conversations WHERE ${col} = ? ORDER BY created_at ASC, id ASC LIMIT 1`,
-    [ownerId]
+    `SELECT id, type, employee_id, group_id, title, version, created_at, updated_at FROM conversations WHERE tenant_id = ? AND ${col} = ? ORDER BY created_at ASC, id ASC LIMIT 1`,
+    [tenantId, ownerId]
   ) as Array<Record<string, unknown>>;
   return rows[0] ? mapConversation(rows[0]) : null;
 }
 
-/** 列表（游标分页，按 updated_at DESC, id DESC 键集） */
-export async function listConversations(opts: { cursor?: string | null; limit?: number } = {}): Promise<Page<ConversationRecord>> {
+/** 列表（游标分页，按 updated_at DESC, id DESC 键集），租户内查询 */
+export async function listConversations(tenantId: string, opts: { cursor?: string | null; limit?: number } = {}): Promise<Page<ConversationRecord>> {
   if (!isDbConfigured()) return { items: [], nextCursor: null };
   await ensureSchema();
   const limit = Math.min(Math.max(opts.limit || 50, 1), 200);
-  const params: Array<string | number> = [];
-  let where = '';
+  const params: Array<string | number> = [tenantId];
+  let where = 'WHERE tenant_id = ?';
   if (opts.cursor) {
     const decoded = decodeConversationCursor(opts.cursor);
-    where = 'WHERE (UNIX_TIMESTAMP(updated_at) < ? OR (UNIX_TIMESTAMP(updated_at) = ? AND id < ?))';
+    where = 'WHERE tenant_id = ? AND (UNIX_TIMESTAMP(updated_at) < ? OR (UNIX_TIMESTAMP(updated_at) = ? AND id < ?))';
     params.push(decoded.ts, decoded.ts, decoded.id);
   }
   const rows = await getPool().query(
@@ -171,7 +171,7 @@ function decodeConversationCursor(cursor: string): { ts: number; id: string } {
  * 追加一条消息 + 附件关联，整体在同一事务内完成。
  * 附件归属与状态在事务内校验；任一关联失败会连同消息一起回滚。
  */
-export async function appendMessage(input: AppendMessageInput): Promise<ConversationMessage> {
+export async function appendMessage(tenantId: string, input: AppendMessageInput): Promise<ConversationMessage> {
   if (!isDbConfigured()) throw new ApiError('db_unavailable', '数据库未配置', 503);
   await ensureSchema();
   if (input.sender !== 'me' && input.sender !== 'employee') throw new ApiError('invalid_sender', 'sender 必须是 me 或 employee');
@@ -182,8 +182,8 @@ export async function appendMessage(input: AppendMessageInput): Promise<Conversa
     await connection.beginTransaction();
 
     const convRows = await connection.query(
-      'SELECT id, type, employee_id, group_id, title, version FROM conversations WHERE id = ? LIMIT 1',
-      [input.conversationId]
+      'SELECT id, type, employee_id, group_id, title, version FROM conversations WHERE id = ? AND tenant_id = ? LIMIT 1 FOR UPDATE',
+      [input.conversationId, tenantId]
     ) as Array<Record<string, unknown>>;
     const conv = convRows[0];
     if (!conv) throw new ApiError('conversation_not_found', `会话不存在: ${input.conversationId}`, 404);
@@ -194,12 +194,12 @@ export async function appendMessage(input: AppendMessageInput): Promise<Conversa
       .filter((id): id is string => typeof id === 'string' && id.length > 0)
       .slice(0, 5);
 
-    // 附件归属校验（在事务内执行，失败即回滚）
+    // 附件归属校验（在事务内执行，失败即回滚）——附件必须同租户且属于当前会话
     const attachments: AttachmentRecord[] = [];
     for (const attId of attachmentIds) {
       const attRows = await connection.query(
-        'SELECT id, owner_type, owner_id, original_name, mime_type, size_bytes, category, status FROM attachments WHERE id = ? LIMIT 1',
-        [attId]
+        'SELECT id, owner_type, owner_id, original_name, mime_type, size_bytes, category, status FROM attachments WHERE id = ? AND tenant_id = ? LIMIT 1',
+        [attId, tenantId]
       ) as Array<Record<string, unknown>>;
       const att = attRows[0];
       if (!att || String(att.status) === 'deleted') throw new ApiError('attachment_not_found', `附件不存在或已删除: ${attId}`, 400);
@@ -221,18 +221,18 @@ export async function appendMessage(input: AppendMessageInput): Promise<Conversa
 
     const id = input.id || newId('m');
     await connection.query(
-      'INSERT INTO conversation_messages (id, conversation_id, sender, sender_name, text, tokens, run_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, input.conversationId, input.sender, input.senderName || '', input.text, input.tokens || 0, input.runId || null]
+      'INSERT INTO conversation_messages (id, tenant_id, conversation_id, sender, sender_name, text, tokens, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, tenantId, input.conversationId, input.sender, input.senderName || '', input.text, input.tokens || 0, input.runId || null]
     );
 
     for (let i = 0; i < attachmentIds.length; i++) {
       await connection.query(
-        'INSERT INTO conversation_message_attachments (message_id, attachment_id, sort_order) VALUES (?, ?, ?)',
-        [id, attachmentIds[i], i]
+        'INSERT INTO conversation_message_attachments (tenant_id, message_id, attachment_id, sort_order) VALUES (?, ?, ?, ?)',
+        [tenantId, id, attachmentIds[i], i]
       );
     }
 
-    await connection.query('UPDATE conversations SET version = version + 1 WHERE id = ?', [input.conversationId]);
+    await connection.query('UPDATE conversations SET version = version + 1 WHERE id = ? AND tenant_id = ?', [input.conversationId, tenantId]);
     await connection.commit();
 
     const created = await connection.query(
@@ -260,19 +260,19 @@ export async function appendMessage(input: AppendMessageInput): Promise<Conversa
   }
 }
 
-/** 按会话分页取消息（seq 游标，含附件），seq 由自增保证并发追加不重不漏 */
-export async function listMessages(conversationId: string, opts: { cursor?: string | null; limit?: number } = {}): Promise<Page<ConversationMessage>> {
+/** 按会话分页取消息（seq 游标，含附件），同时按 tenant_id + conversation_id 限定 */
+export async function listMessages(tenantId: string, conversationId: string, opts: { cursor?: string | null; limit?: number } = {}): Promise<Page<ConversationMessage>> {
   if (!isDbConfigured()) return { items: [], nextCursor: null };
   await ensureSchema();
   const limit = Math.min(Math.max(opts.limit || 50, 1), 200);
   const cursor = opts.cursor ? Number(opts.cursor) : 0;
   const rows = await getPool().query(
-    'SELECT id, conversation_id, seq, sender, sender_name, text, tokens, run_id, created_at FROM conversation_messages WHERE conversation_id = ? AND seq > ? ORDER BY seq ASC LIMIT ?',
-    [conversationId, Number.isFinite(cursor) ? cursor : 0, limit + 1]
+    'SELECT id, conversation_id, seq, sender, sender_name, text, tokens, run_id, created_at FROM conversation_messages WHERE tenant_id = ? AND conversation_id = ? AND seq > ? ORDER BY seq ASC LIMIT ?',
+    [tenantId, conversationId, Number.isFinite(cursor) ? cursor : 0, limit + 1]
   ) as Array<Record<string, unknown>>;
   const hasMore = rows.length > limit;
   const slice = rows.slice(0, limit);
-  const attMap = await listAttachmentsForConversationMessages(slice.map((r) => String(r.id)));
+  const attMap = await listAttachmentsForConversationMessages(tenantId, slice.map((r) => String(r.id)));
   const items: ConversationMessage[] = slice.map((r) => {
     const id = String(r.id);
     const atts = attMap[id] || [];
@@ -293,7 +293,7 @@ export async function listMessages(conversationId: string, opts: { cursor?: stri
   return { items, nextCursor };
 }
 
-async function listAttachmentsForConversationMessages(messageIds: string[]): Promise<Record<string, AttachmentRecord[]>> {
+async function listAttachmentsForConversationMessages(tenantId: string, messageIds: string[]): Promise<Record<string, AttachmentRecord[]>> {
   const result: Record<string, AttachmentRecord[]> = {};
   if (!messageIds.length) return result;
   const placeholders = messageIds.map(() => '?').join(',');
@@ -302,9 +302,9 @@ async function listAttachmentsForConversationMessages(messageIds: string[]): Pro
             a.extracted_text, a.extraction_meta, a.error_message, a.created_at, ma.message_id, ma.sort_order
      FROM attachments a
      JOIN conversation_message_attachments ma ON ma.attachment_id = a.id
-     WHERE ma.message_id IN (${placeholders})
+     WHERE ma.tenant_id = ? AND ma.message_id IN (${placeholders})
      ORDER BY ma.sort_order ASC, a.created_at ASC`,
-    messageIds
+    [tenantId, ...messageIds]
   ) as Array<Record<string, unknown>>;
   for (const row of rows) {
     const messageId = String(row.message_id);
@@ -329,11 +329,12 @@ async function listAttachmentsForConversationMessages(messageIds: string[]): Pro
 /** 迁移内部使用：在给定连接上幂等插入一条会话消息（跳过已存在 ID） */
 export async function insertMessageIgnoring(
   connection: PoolConnection,
+  tenantId: string,
   input: { id: string; conversationId: string; sender: 'me' | 'employee'; senderName?: string; text: string; tokens?: number }
 ): Promise<boolean> {
   const result = await connection.query(
-    'INSERT IGNORE INTO conversation_messages (id, conversation_id, sender, sender_name, text, tokens) VALUES (?, ?, ?, ?, ?, ?)',
-    [input.id, input.conversationId, input.sender, input.senderName || '', input.text, input.tokens || 0]
+    'INSERT IGNORE INTO conversation_messages (id, tenant_id, conversation_id, sender, sender_name, text, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [input.id, tenantId, input.conversationId, input.sender, input.senderName || '', input.text, input.tokens || 0]
   ) as { affectedRows?: number };
   return (result.affectedRows || 0) > 0;
 }
@@ -341,13 +342,14 @@ export async function insertMessageIgnoring(
 /** 迁移内部使用：在给定连接上幂等插入一条消息-附件关联 */
 export async function insertAttachmentLinkIgnoring(
   connection: PoolConnection,
+  tenantId: string,
   messageId: string,
   attachmentId: string,
   sortOrder: number
 ): Promise<boolean> {
   const result = await connection.query(
-    'INSERT IGNORE INTO conversation_message_attachments (message_id, attachment_id, sort_order) VALUES (?, ?, ?)',
-    [messageId, attachmentId, sortOrder]
+    'INSERT IGNORE INTO conversation_message_attachments (tenant_id, message_id, attachment_id, sort_order) VALUES (?, ?, ?, ?)',
+    [tenantId, messageId, attachmentId, sortOrder]
   ) as { affectedRows?: number };
   return (result.affectedRows || 0) > 0;
 }

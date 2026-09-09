@@ -2,6 +2,7 @@
  * GET /api/agent/runs/[id]/events — SSE 执行事件流（docs §5.1 / §8）。
  * 先回放已有事件；若 run 未结束，则轮询新事件直到完成或连接关闭。
  */
+import { requireLegacyTenantContext } from '@/lib/auth/context';
 import { errorBody, newRequestId } from '@/lib/agent/validators';
 import { getRun, listRunEvents } from '@/lib/repositories/runs';
 
@@ -11,7 +12,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const requestId = newRequestId();
   const { id } = await params;
   try {
-    const run = await getRun(id);
+    const ctx = await requireLegacyTenantContext(request);
+    const run = await getRun(ctx.tenantId, id);
     if (!run) return Response.json({ code: 'run_not_found', message: `运行记录不存在: ${id}`, requestId }, { status: 404 });
 
     const encoder = new TextEncoder();
@@ -24,7 +26,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           } catch { /* 客户端已断开 */ }
         };
         const flush = async (after?: number) => {
-          const events = await listRunEvents(id, after);
+          const events = await listRunEvents(ctx.tenantId, id, after);
           for (const e of events) {
             send('run_event', { id: e.id, type: e.eventType, payload: e.payload, createdAt: e.createdAt });
             lastId = Math.max(lastId, e.id);
@@ -42,7 +44,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         while (!TERMINAL.has(current.status)) {
           if (aborted.aborted) break;
           await new Promise((resolve) => setTimeout(resolve, 1200));
-          const latest = await getRun(id);
+          const latest = await getRun(ctx.tenantId, id);
           if (!latest) break;
           current = latest;
           await flush(lastId);

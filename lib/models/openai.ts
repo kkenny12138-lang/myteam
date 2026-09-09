@@ -20,6 +20,7 @@ interface GenerateParamsLike {
   maxTokens?: number;
   json?: boolean;
   signal?: AbortSignal;
+  tenantId?: string;
 }
 
 function toInputContent(content: string | MessageContentPart[]) {
@@ -32,7 +33,7 @@ function toInputContent(content: string | MessageContentPart[]) {
 }
 
 export async function generateOpenAI(params: GenerateParamsLike): Promise<GenerateResult> {
-  const runtimeConfig = await getRuntimeModelConfig('openai');
+  const runtimeConfig = await getRuntimeModelConfig(params.tenantId, 'openai');
   if (!runtimeConfig.enabled) throw new FatalError('GPT 已在模型配置表中停用');
   const apiKey = runtimeConfig.apiKey;
   if (!apiKey) throw new FatalError('本地尚未配置 OPENAI_API_KEY');

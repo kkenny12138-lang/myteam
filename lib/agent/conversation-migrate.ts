@@ -13,6 +13,7 @@ import { defaultConversationId, insertAttachmentLinkIgnoring, insertMessageIgnor
 import type { PoolConnection } from 'mariadb';
 
 const MIGRATION_NAME = 'conversation_bootstrap_v1';
+const LEGACY_TENANT = 'tenant_legacy';
 
 export interface ConversationMigrationReport {
   skipped: boolean;
@@ -60,13 +61,13 @@ export async function migrateToConversations(): Promise<ConversationMigrationRep
       const employeeId = row.employee_id;
       const conversationId = defaultConversationId('single', employeeId);
       const title = await employeeTitle(connection, employeeId);
-      await ensureConversation(connection, conversationId, 'single', employeeId, null, title, report);
+      await ensureConversation(connection, LEGACY_TENANT, conversationId, 'single', employeeId, null, title, report);
       const msgs = await connection.query(
         'SELECT id, sender, text, tokens FROM messages WHERE employee_id = ? ORDER BY created_at ASC, id ASC',
         [employeeId]
       ) as Array<{ id: string; sender: string; text: string; tokens: number }>;
       for (const m of msgs) {
-        const copied = await insertMessageIgnoring(connection, {
+        const copied = await insertMessageIgnoring(connection, LEGACY_TENANT, {
           id: m.id,
           conversationId,
           sender: m.sender === 'me' ? 'me' : 'employee',
@@ -85,13 +86,13 @@ export async function migrateToConversations(): Promise<ConversationMigrationRep
       const groupId = row.group_id;
       const conversationId = defaultConversationId('group', groupId);
       const title = await groupTitle(connection, groupId);
-      await ensureConversation(connection, conversationId, 'group', null, groupId, title, report);
+      await ensureConversation(connection, LEGACY_TENANT, conversationId, 'group', null, groupId, title, report);
       const msgs = await connection.query(
         'SELECT id, sender, sender_name, text, tokens FROM group_messages WHERE group_id = ? ORDER BY created_at ASC, id ASC',
         [groupId]
       ) as Array<{ id: string; sender: string; sender_name: string; text: string; tokens: number }>;
       for (const m of msgs) {
-        const copied = await insertMessageIgnoring(connection, {
+        const copied = await insertMessageIgnoring(connection, LEGACY_TENANT, {
           id: m.id,
           conversationId,
           sender: m.sender === 'me' ? 'me' : 'employee',
@@ -111,7 +112,7 @@ export async function migrateToConversations(): Promise<ConversationMigrationRep
     for (const link of links) {
       const conversationId = messageToConversation.get(link.message_id);
       if (!conversationId) continue; // 孤儿关联（消息已不存在）跳过
-      const linked = await insertAttachmentLinkIgnoring(connection, link.message_id, link.attachment_id, Number(link.sort_order || 0));
+      const linked = await insertAttachmentLinkIgnoring(connection, LEGACY_TENANT, link.message_id, link.attachment_id, Number(link.sort_order || 0));
       if (linked) report.attachmentsLinked++;
     }
 
@@ -136,6 +137,7 @@ export async function migrateToConversations(): Promise<ConversationMigrationRep
 
 async function ensureConversation(
   connection: PoolConnection,
+  tenantId: string,
   id: string,
   type: 'single' | 'group',
   employeeId: string | null,
@@ -143,14 +145,14 @@ async function ensureConversation(
   title: string,
   report: ConversationMigrationReport
 ): Promise<void> {
-  const existing = await connection.query('SELECT id FROM conversations WHERE id = ? LIMIT 1', [id]) as Array<{ id: string }>;
+  const existing = await connection.query('SELECT id FROM conversations WHERE id = ? AND tenant_id = ? LIMIT 1', [id, tenantId]) as Array<{ id: string }>;
   if (existing.length) {
     report.conversationsExisted++;
     return;
   }
   await connection.query(
-    'INSERT INTO conversations (id, type, employee_id, group_id, title, version) VALUES (?, ?, ?, ?, ?, 1)',
-    [id, type, employeeId, groupId, title]
+    'INSERT INTO conversations (id, tenant_id, type, employee_id, group_id, title, version) VALUES (?, ?, ?, ?, ?, ?, 1)',
+    [id, tenantId, type, employeeId, groupId, title]
   );
   report.conversationsCreated++;
 }

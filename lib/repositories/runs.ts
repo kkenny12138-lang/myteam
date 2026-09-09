@@ -36,14 +36,15 @@ function mapRun(r: Record<string, unknown>): AgentRun {
   };
 }
 
-export async function createRun(run: Partial<AgentRun> & Pick<AgentRun, 'id' | 'rootRunId' | 'conversationId' | 'agentId' | 'inputText' | 'status'>): Promise<void> {
+export async function createRun(tenantId: string, run: Partial<AgentRun> & Pick<AgentRun, 'id' | 'rootRunId' | 'conversationId' | 'agentId' | 'inputText' | 'status'>): Promise<void> {
   await ensureSchema();
   await getPool().query(
-    `INSERT INTO agent_runs (id, parent_run_id, root_run_id, conversation_id, agent_id, skill_id, status, input_text)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO agent_runs (id, tenant_id, parent_run_id, root_run_id, conversation_id, agent_id, skill_id, status, input_text)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE id = id`,
     [
       run.id,
+      tenantId,
       run.parentRunId ?? null,
       run.rootRunId,
       run.conversationId,
@@ -55,16 +56,17 @@ export async function createRun(run: Partial<AgentRun> & Pick<AgentRun, 'id' | '
   );
 }
 
-export async function getRun(id: string): Promise<AgentRun | null> {
+export async function getRun(tenantId: string, id: string): Promise<AgentRun | null> {
   if (!isDbConfigured()) return null;
   await ensureSchema();
-  const rows = await getPool().query('SELECT * FROM agent_runs WHERE id = ? LIMIT 1', [id]);
+  const rows = await getPool().query('SELECT * FROM agent_runs WHERE id = ? AND tenant_id = ? LIMIT 1', [id, tenantId]);
   const row = (rows as Array<Record<string, unknown>>)[0];
   return row ? mapRun(row) : null;
 }
 
 /** 结束一个 Run：更新状态、输出/错误、Token、耗时、完成时间。 */
 export async function finishRun(
+  tenantId: string,
   id: string,
   fields: Partial<Pick<AgentRun, 'status' | 'outputText' | 'errorText' | 'modelName' | 'promptTokens' | 'completionTokens' | 'latencyMs'>>
 ): Promise<void> {
@@ -81,43 +83,43 @@ export async function finishRun(
     sets.push('finished_at = CURRENT_TIMESTAMP');
   }
   if (!sets.length) return;
-  values.push(id);
-  await getPool().query(`UPDATE agent_runs SET ${sets.join(', ')} WHERE id = ?`, values);
+  values.push(id, tenantId);
+  await getPool().query(`UPDATE agent_runs SET ${sets.join(', ')} WHERE id = ? AND tenant_id = ?`, values);
 }
 
-export async function listChildRuns(parentRunId: string): Promise<AgentRun[]> {
+export async function listChildRuns(tenantId: string, parentRunId: string): Promise<AgentRun[]> {
   if (!isDbConfigured()) return [];
   await ensureSchema();
-  const rows = await getPool().query('SELECT * FROM agent_runs WHERE parent_run_id = ? ORDER BY created_at ASC', [parentRunId]);
+  const rows = await getPool().query('SELECT * FROM agent_runs WHERE tenant_id = ? AND parent_run_id = ? ORDER BY created_at ASC', [tenantId, parentRunId]);
   return (rows as Array<Record<string, unknown>>).map(mapRun);
 }
 
-export async function listRunsByConversation(conversationId: string, limit = 50): Promise<AgentRun[]> {
+export async function listRunsByConversation(tenantId: string, conversationId: string, limit = 50): Promise<AgentRun[]> {
   if (!isDbConfigured()) return [];
   await ensureSchema();
   const rows = await getPool().query(
-    'SELECT * FROM agent_runs WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?',
-    [conversationId, limit]
+    'SELECT * FROM agent_runs WHERE tenant_id = ? AND conversation_id = ? ORDER BY created_at DESC LIMIT ?',
+    [tenantId, conversationId, limit]
   );
   return (rows as Array<Record<string, unknown>>).map(mapRun);
 }
 
 /* ---------- events ---------- */
 
-export async function appendRunEvent(runId: string, eventType: string, payload?: Record<string, unknown>): Promise<void> {
+export async function appendRunEvent(tenantId: string, runId: string, eventType: string, payload?: Record<string, unknown>): Promise<void> {
   await ensureSchema();
   await getPool().query(
-    'INSERT INTO agent_run_events (run_id, event_type, payload_json) VALUES (?, ?, ?)',
-    [runId, eventType, payload ? JSON.stringify(payload) : null]
+    'INSERT INTO agent_run_events (tenant_id, run_id, event_type, payload_json) VALUES (?, ?, ?, ?)',
+    [tenantId, runId, eventType, payload ? JSON.stringify(payload) : null]
   );
 }
 
-export async function listRunEvents(runId: string, afterId?: number): Promise<AgentRunEvent[]> {
+export async function listRunEvents(tenantId: string, runId: string, afterId?: number): Promise<AgentRunEvent[]> {
   if (!isDbConfigured()) return [];
   await ensureSchema();
   const rows = afterId
-    ? await getPool().query('SELECT * FROM agent_run_events WHERE run_id = ? AND id > ? ORDER BY id ASC', [runId, afterId])
-    : await getPool().query('SELECT * FROM agent_run_events WHERE run_id = ? ORDER BY id ASC', [runId]);
+    ? await getPool().query('SELECT * FROM agent_run_events WHERE tenant_id = ? AND run_id = ? AND id > ? ORDER BY id ASC', [tenantId, runId, afterId])
+    : await getPool().query('SELECT * FROM agent_run_events WHERE tenant_id = ? AND run_id = ? ORDER BY id ASC', [tenantId, runId]);
   return (rows as Array<Record<string, unknown>>).map((r) => ({
     id: Number(r.id),
     runId: String(r.run_id),

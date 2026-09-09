@@ -1,4 +1,5 @@
 import { ensureSchema, getPool, isDbConfigured } from '@/lib/db';
+import { requirePlatformOps, requireSessionUser } from '@/lib/auth/context';
 
 type OrgNode = { id: string; name: string; description: string; parentId: string | null; department?: string; headEmployeeId?: string };
 
@@ -13,8 +14,9 @@ export const DEFAULT_ORG_NODES: OrgNode[] = [
 ];
 
 /** GET /api/org-nodes — 返回组织架构节点；无记录时返回默认架构 */
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    await requireSessionUser(request);
     if (!isDbConfigured()) return Response.json({ orgNodes: null }, { status: 503 });
     await ensureSchema();
     const rows = await getPool().query(
@@ -34,10 +36,10 @@ export async function GET() {
     return Response.json({ error: error instanceof Error ? error.message : '数据库访问失败' }, { status: 500 });
   }
 }
-
-/** PUT /api/org-nodes — 整体替换组织架构节点 */
+/** PUT /api/org-nodes — 整体替换组织架构节点（仅平台运维） */
 export async function PUT(request: Request) {
   try {
+    await requirePlatformOps(request);
     const body = await request.json() as { orgNodes?: OrgNode[] };
     const nodes = Array.isArray(body.orgNodes) ? body.orgNodes : null;
     if (!nodes) return Response.json({ error: '参数不正确：缺少 orgNodes' }, { status: 400 });

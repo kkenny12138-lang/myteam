@@ -83,12 +83,12 @@ export async function getEmployeeProfile(employeeId: string): Promise<EmployeePr
   };
 }
 
-export async function listMemoriesForAgent(agentId: string, limit = 20): Promise<MemoryRecord[]> {
-  return listMemories(agentId, undefined, limit);
+export async function listMemoriesForAgent(tenantId: string, agentId: string, limit = 20): Promise<MemoryRecord[]> {
+  return listMemories(tenantId, agentId, undefined, limit);
 }
 
-/** 加载一次运行所需的 Agent 上下文（可按 skillId 精确加载，未指定则不加载 Skill 全文） */
-export async function loadAgentContext(agentId: string, opts?: { skillId?: string | null }): Promise<AgentContext | null> {
+/** 加载一次运行所需的 Agent 上下文（可按 skillId 精确加载，未指定则不加载 Skill 全文）；记忆按租户隔离 */
+export async function loadAgentContext(agentId: string, opts?: { skillId?: string | null; tenantId?: string }): Promise<AgentContext | null> {
   const agent = await getAgentById(agentId);
   if (!agent) return null;
   const profile = agent.agentType === 'employee' && agent.employeeId ? await getEmployeeProfile(agent.employeeId) : null;
@@ -98,7 +98,7 @@ export async function loadAgentContext(agentId: string, opts?: { skillId?: strin
     const skill = await getSkillForAgent(agentId, opts.skillId);
     if (skill) skills = [skill];
   }
-  const memories = await listMemoriesForAgent(agentId);
+  const memories = opts?.tenantId ? await listMemoriesForAgent(opts.tenantId, agentId) : [];
   return { agent, profile, skills, memories };
 }
 

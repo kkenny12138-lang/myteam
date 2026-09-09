@@ -16,6 +16,7 @@ export interface BuiltinToolHandler {
 }
 
 export interface ToolContext {
+  tenantId: string;
   agentId: string;
   runId?: string;
   confirmed?: boolean;
@@ -93,7 +94,7 @@ export async function executeTool(toolId: string, args: Record<string, unknown>,
   if (!definition || !definition.enabled) return { ok: false, error: `工具不存在或已停用: ${toolId}` };
 
   if (definition.permission === 'write' && !ctx.confirmed) {
-    await appendRunEvent(ctx.runId || 'n/a', 'tool_requires_confirmation', { toolId, toolName: definition.name, args });
+    await appendRunEvent(ctx.tenantId, ctx.runId || 'n/a', 'tool_requires_confirmation', { toolId, toolName: definition.name, args });
     return { ok: false, requiresConfirmation: true, data: { toolId, toolName: definition.name } };
   }
 
@@ -102,10 +103,10 @@ export async function executeTool(toolId: string, args: Record<string, unknown>,
 
   try {
     const data = await handler(args, ctx);
-    await appendRunEvent(ctx.runId || 'n/a', 'tool_executed', { toolId, args, permission: definition.permission });
+    await appendRunEvent(ctx.tenantId, ctx.runId || 'n/a', 'tool_executed', { toolId, args, permission: definition.permission });
     return { ok: true, data };
   } catch (error) {
-    await appendRunEvent(ctx.runId || 'n/a', 'tool_failed', { toolId, error: error instanceof Error ? error.message : String(error) });
+    await appendRunEvent(ctx.tenantId, ctx.runId || 'n/a', 'tool_failed', { toolId, error: error instanceof Error ? error.message : String(error) });
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }

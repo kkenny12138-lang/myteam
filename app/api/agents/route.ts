@@ -2,6 +2,7 @@
  * GET/POST /api/agents — Agent 列表 / 创建（docs §8）。
  */
 import { listAgents, createAgent } from '@/lib/repositories/agents';
+import { requirePlatformOps, requireSessionUser } from '@/lib/auth/context';
 import { ApiError, errorBody, newAgentId, newRequestId, validateAgentPayload } from '@/lib/agent/validators';
 import { defaultModel } from '@/lib/models/gateway';
 import type { AgentRecord } from '@/lib/agent/types';
@@ -9,6 +10,7 @@ import type { AgentRecord } from '@/lib/agent/types';
 export async function GET(request: Request) {
   const requestId = newRequestId();
   try {
+    await requireSessionUser(request);
     const url = new URL(request.url);
     const status = url.searchParams.get('status') as AgentRecord['status'] | null;
     const agents = status && ['draft', 'active', 'disabled'].includes(status) ? await listAgents(status) : await listAgents();
@@ -21,6 +23,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const requestId = newRequestId();
   try {
+    await requirePlatformOps(request);
     const body = await request.json();
     const payload = validateAgentPayload(body, true);
     const provider = payload.modelProvider === 'kimi' || payload.modelProvider === 'openai' ? payload.modelProvider : 'deepseek';
