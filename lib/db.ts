@@ -137,6 +137,15 @@ const SCHEMA_STATEMENTS = [
   INDEX idx_group_messages_tenant (tenant_id, created_at),
   INDEX idx_group_messages (group_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  `CREATE TABLE IF NOT EXISTS group_summaries (
+  tenant_id CHAR(26) NOT NULL,
+  group_id VARCHAR(50) NOT NULL,
+  summary MEDIUMTEXT NOT NULL,
+  source_message_count INT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (tenant_id, group_id),
+  INDEX idx_group_summaries_group (group_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   // ---- 对话附件（docs/MULTIMODAL_ATTACHMENT_DEVELOPMENT_PLAN.md §5）----
   `CREATE TABLE IF NOT EXISTS attachments (
   id VARCHAR(64) PRIMARY KEY,

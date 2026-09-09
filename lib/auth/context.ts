@@ -8,6 +8,20 @@ import { ensureSchema, getPool, isDbConfigured } from '@/lib/db';
 import { ApiError } from '@/lib/agent/validators';
 import { findSessionByToken, getUserById, readSessionToken, type SessionUser } from '@/lib/auth/session';
 
+/** 当前租户仅由服务端写入 cookie；实际权限仍由 tenant_members 二次校验。 */
+export const ACTIVE_TENANT_COOKIE = 'myteam_active_tenant';
+
+function readCookie(request: Request, name: string): string | null {
+  const cookie = request.headers.get('cookie');
+  if (!cookie) return null;
+  for (const part of cookie.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx < 0 || part.slice(0, idx).trim() !== name) continue;
+    try { return decodeURIComponent(part.slice(idx + 1).trim()); } catch { return null; }
+  }
+  return null;
+}
+
 export type TenantRole = 'owner' | 'admin' | 'member' | 'viewer';
 
 export interface TenantContext {
@@ -115,6 +129,8 @@ export function hasRole(ctx: TenantContext, ...roles: TenantRole[]): boolean {
  */
 export async function requireLegacyTenantContext(request: Request): Promise<TenantContext> {
   const user = await requireSessionUser(request);
+  const selectedSlug = readCookie(request, ACTIVE_TENANT_COOKIE);
+  if (selectedSlug) return resolveTenantContext(user, selectedSlug);
   await ensureSchema();
   const rows = await getPool().query(
     `SELECT t.id, t.slug, tm.role FROM tenant_members tm JOIN tenants t ON t.id = tm.tenant_id
