@@ -1,0 +1,107 @@
+{
+  "decisionLine": {
+    "dispatcherId": "elon",
+    "nodes": [
+      {
+        "employeeId": "jobs",
+        "domain": "产品设计 · 用户体验 · 品牌表达",
+        "keywords": [
+          "产品",
+          "设计",
+          "体验",
+          "品牌",
+          "功能",
+          "界面",
+          "用户"
+        ]
+      },
+      {
+        "employeeId": "buffett",
+        "domain": "财务分析 · 价值投资 · 风险控制",
+        "keywords": [
+          "财务",
+          "投资",
+          "预算",
+          "现金流",
+          "成本",
+          "利润",
+          "资金",
+          "收益"
+        ]
+      },
+      {
+        "employeeId": "munger",
+        "domain": "战略推演 · 决策复盘 · 风险预判",
+        "keywords": [
+          "战略",
+          "风险",
+          "决策",
+          "复盘",
+          "偏差",
+          "逆向",
+          "连锁"
+        ]
+      },
+      {
+        "employeeId": "elon",
+        "domain": "战略决策 · 商业增长 · 工程管理",
+        "keywords": [
+          "战略",
+          "增长",
+          "工程",
+          "技术",
+          "突破",
+          "执行",
+          "指标"
+        ]
+      }
+    ]
+  },
+  "orgNodes": [
+    {
+      "id": "root",
+      "name": "公司总部",
+      "description": "统筹公司整体战略与经营目标，负责跨部门协调、资源分配与重大决策的最终拍板。",
+      "parentId": null,
+      "department": "公司总部"
+    },
+    {
+      "id": "mgmt",
+      "name": "管理层",
+      "description": "负责公司战略方向制定、关键项目决策与全局资源调度，向下拆解目标并分派给各部门。",
+      "parentId": "root",
+      "department": "管理层"
+    },
+    {
+      "id": "product",
+      "name": "产品部",
+      "description": "负责产品定位、用户体验与品牌表达，把用户需求转化为可落地的产品方案，并对功能做取舍评审。",
+      "parentId": "root",
+      "department": "产品部",
+      "headEmployeeId": "jobs"
+    },
+    {
+      "id": "finance",
+      "name": "财务部",
+      "description": "负责预算、投资、现金流与风险控制，评估商业模式与长期回报，守住资金安全边界。",
+      "parentId": "root",
+      "department": "财务部",
+      "headEmployeeId": "buffett"
+    },
+    {
+      "id": "strategy",
+      "name": "战略部",
+      "description": "负责战略推演、决策复盘与风险预判，用多元思维模型识别偏差、预演失败并纠偏。",
+      "parentId": "root",
+      "department": "战略部",
+      "headEmployeeId": "munger"
+    },
+    {
+      "id": "hr",
+      "name": "人力资源部",
+      "description": "负责招聘、培训、绩效与员工关系，搭建人才梯队并建设组织文化。",
+      "parentId": "root",
+      "department": "人力资源部"
+    }
+  ]
+}
