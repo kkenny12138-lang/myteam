@@ -47,3 +47,12 @@ export async function deleteMemory(tenantId: string, id: string): Promise<void> 
   await ensureSchema();
   await getPool().query('DELETE FROM memories WHERE id = ? AND tenant_id = ?', [id, tenantId]);
 }
+
+export async function updateMemory(tenantId: string, id: string, input: Pick<AddMemoryInput, 'kind' | 'content'>): Promise<boolean> {
+  await ensureSchema();
+  const result = await getPool().query(
+    'UPDATE memories SET kind = ?, content = ? WHERE id = ? AND tenant_id = ?',
+    [input.kind, input.content, id, tenantId]
+  ) as { affectedRows?: number };
+  return Number(result.affectedRows) > 0;
+}
